@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Play, X, FastForward } from 'lucide-react';
 import { t } from '../../../i18n';
 
@@ -25,19 +25,32 @@ export const NextEpisodeOverlay: React.FC<NextEpisodeOverlayProps> = ({
 }) => {
   const TOTAL_SECONDS = 5;
   const [secondsRemaining, setSecondsRemaining] = useState(TOTAL_SECONDS);
+  const onPlayNextRef = useRef(onPlayNext);
+  const playNextTriggeredRef = useRef(false);
 
   useEffect(() => {
+    onPlayNextRef.current = onPlayNext;
+  }, [onPlayNext]);
+
+  const playNextOnce = useCallback(() => {
+    if (playNextTriggeredRef.current) return;
+    playNextTriggeredRef.current = true;
+    onPlayNextRef.current();
+  }, []);
+
+  useEffect(() => {
+    if (playNextTriggeredRef.current) return;
     if (secondsRemaining <= 0) {
-      onPlayNext();
+      playNextOnce();
       return;
     }
 
-    const timer = setInterval(() => {
-      setSecondsRemaining((prev) => prev - 1);
+    const timer = setTimeout(() => {
+      setSecondsRemaining((prev) => Math.max(0, prev - 1));
     }, 1000);
 
-    return () => clearInterval(timer);
-  }, [secondsRemaining, onPlayNext]);
+    return () => clearTimeout(timer);
+  }, [secondsRemaining, playNextOnce]);
 
   const progressPercentage = ((TOTAL_SECONDS - secondsRemaining) / TOTAL_SECONDS) * 100;
   const strokeDashoffset = 100 - progressPercentage;
@@ -100,7 +113,7 @@ export const NextEpisodeOverlay: React.FC<NextEpisodeOverlayProps> = ({
         {/* Progress Bar & Actions */}
         <div className="flex items-center gap-3 pt-1 border-t border-zinc-800/60">
           <button
-            onClick={onPlayNext}
+            onClick={playNextOnce}
             className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold rounded-xl shadow-md shadow-brand-500/20 transition-all active:scale-[0.98]"
           >
             <Play className="w-3.5 h-3.5 fill-current" />

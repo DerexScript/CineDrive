@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { DEFAULT_SERIES_COMPLETION_THRESHOLD_PERCENT } from '@cinedrive/shared';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2, Clock } from 'lucide-react';
 import { PlayerControls } from './PlayerControls';
@@ -33,6 +34,7 @@ import type { MediaItemType, PlaybackMode } from '../../../types/media';
 interface MediaPlayerProps {
   media: MediaItemType;
   episodeId?: string;
+  fullscreenContainerRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 const STALL_RECOVERY_DELAY_MS = 12_000;
@@ -43,7 +45,11 @@ const NEXT_EPISODE_SUPPRESSION_MS = 20_000;
 const AUDIO_COMPATIBILITY_PROBE_MS = 6000;
 const STABLE_PLAYBACK_RESET_MS = 30_000;
 
-export const MediaPlayer: React.FC<MediaPlayerProps> = ({ media, episodeId }) => {
+export const MediaPlayer: React.FC<MediaPlayerProps> = ({
+  media,
+  episodeId,
+  fullscreenContainerRef,
+}) => {
   const navigate = useNavigate();
   const playerContainerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -65,9 +71,11 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({ media, episodeId }) =>
   const cinemaMode = useUiStore((state) => state.cinemaMode);
 
   const active = useActiveMedia(media, episodeId);
-  const recommendedMode: PlaybackMode = isSafari
-    ? active.playbackPlan?.safari || 'direct'
-    : active.playbackPlan?.chromium || 'direct';
+  // const recommendedMode: PlaybackMode = isSafari
+  //   ? active.playbackPlan?.safari || 'direct'
+  //   : active.playbackPlan?.chromium || 'direct';
+
+  const recommendedMode: PlaybackMode = isSafari ? 'hls' : 'audio';
 
   const source = usePlaybackSource({
     driveFileId: active.driveFileId,
@@ -85,6 +93,11 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({ media, episodeId }) =>
   const recoveryPositionRef = useRef<number | null>(null);
   const resumeAfterSourceChangeRef = useRef<PlaybackMode | null>(null);
   const resumePromptHandledRef = useRef(false);
+  const initialPositionHandledKeyRef = useRef<string | null>(null);
+  const completionThresholdTriggeredRef = useRef(false);
+  const skipBreakpointEpisodeKeyRef = useRef<string | null>(null);
+  const previousSkipBreakpointPositionRef = useRef<number | null>(null);
+  const pendingSkipBreakpointTargetRef = useRef<number | null>(null);
   const suppressNextEpisodeUntilRef = useRef(0);
   const sourceStartedAtRef = useRef(0);
   const firstFrameReportedRef = useRef(false);
@@ -102,7 +115,20 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({ media, episodeId }) =>
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [bufferedTime, setBufferedTime] = useState(0);
+  const initialPositionKey = JSON.stringify([
+    media.id,
+    active.activeEpisodeId ?? episodeId ?? null,
+    active.driveFileId,
+  ]);
   const sourceResetKey = `${active.driveFileId || 'missing'}:${recommendedMode}:${source.automaticQuality}`;
+  const setSkipBreakpointPosition = (
+    positionSeconds: number,
+    pendingTargetSeconds: number | null = null,
+  ) => {
+    skipBreakpointEpisodeKeyRef.current = initialPositionKey;
+    previousSkipBreakpointPositionRef.current = positionSeconds;
+    pendingSkipBreakpointTargetRef.current = pendingTargetSeconds;
+  };
   const missingDriveError: PlayerErrorState | null = active.driveFileId
     ? null
     : {
@@ -199,6 +225,7 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({ media, episodeId }) =>
 
   useEffect(() => {
     nextEpisodeDismissedRef.current = false;
+    completionThresholdTriggeredRef.current = false;
   }, [episodeId]);
 
   useLayoutEffect(() => {
@@ -490,6 +517,14 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({ media, episodeId }) =>
     const video = videoRef.current;
     if (!video) return;
 
+    const localPlaybackTime =
+      source.playbackMode === 'hls'
+        ? (getHlsRecoveryPosition() ?? video.currentTime)
+        : video.currentTime;
+    if (skipBreakpointEpisodeKeyRef.current !== initialPositionKey) {
+      setSkipBreakpointPosition(localPlaybackTime + timelineOffset);
+    }
+
     setIsBuffering(false);
     const reportedDuration = video.duration;
     setDuration(
@@ -516,6 +551,7 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({ media, episodeId }) =>
     if (recoveryPositionRef.current !== null) {
       const recoveryPosition = recoveryPositionRef.current;
       recoveryPositionRef.current = null;
+      setSkipBreakpointPosition(recoveryPosition, recoveryPosition);
       video.currentTime = useTranscode
         ? Math.max(0, recoveryPosition - source.startOffset)
         : recoveryPosition;
@@ -523,17 +559,30 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({ media, episodeId }) =>
       return;
     }
 
-    const savedPosition = active.progress?.positionSeconds || 0;
+    // A seek to a nonzero compatibility-stream offset reloads the media source,
+    // which emits loadedmetadata again. Only make the initial resume/skip choice
+    // once for this episode, so that reload cannot seek back to the same point.
+    if (initialPositionHandledKeyRef.current === initialPositionKey) return;
+    initialPositionHandledKeyRef.current = initialPositionKey;
+
+    const savedPosition = active.progress?.completed ? 0 : active.progress?.positionSeconds || 0;
+    const configuredStart = active.startAtSeconds;
     const shouldOfferResume =
       !resumePromptHandledRef.current &&
       !active.progress?.completed &&
-      savedPosition > 15 &&
+      savedPosition > Math.max(15, configuredStart) &&
       savedPosition < (active.analyzedDuration || video.duration) - 30;
     resumePromptHandledRef.current = true;
 
     if (shouldOfferResume) {
       video.pause();
       setShowResumeModal(true);
+    } else if (
+      configuredStart > savedPosition &&
+      configuredStart < (active.analyzedDuration || video.duration)
+    ) {
+      setSkipBreakpointPosition(configuredStart, configuredStart);
+      seekToAbsoluteTime(configuredStart, true, source.playbackMode !== 'direct');
     } else {
       video.play().catch(() => {});
     }
@@ -591,6 +640,22 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({ media, episodeId }) =>
         ? (getHlsRecoveryPosition() ?? video.currentTime)
         : video.currentTime;
     const playbackPosition = localPlaybackTime + timelineOffset;
+    let previousSkipBreakpointPosition = previousSkipBreakpointPositionRef.current;
+    let suppressSkipBreakpointCheck = false;
+    if (skipBreakpointEpisodeKeyRef.current !== initialPositionKey) {
+      setSkipBreakpointPosition(playbackPosition);
+      previousSkipBreakpointPosition = null;
+      suppressSkipBreakpointCheck = true;
+    } else if (pendingSkipBreakpointTargetRef.current !== null) {
+      suppressSkipBreakpointCheck = true;
+      const pendingTarget = pendingSkipBreakpointTargetRef.current;
+      if (playbackPosition >= pendingTarget - 0.5) {
+        pendingSkipBreakpointTargetRef.current = null;
+      }
+      previousSkipBreakpointPositionRef.current = playbackPosition;
+    } else {
+      previousSkipBreakpointPositionRef.current = playbackPosition;
+    }
     setCurrentTime(playbackPosition);
 
     // Safari can emit a transient waiting/stalled event while it still has a
@@ -609,6 +674,50 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({ media, episodeId }) =>
 
     const reportedDuration = active.analyzedDuration || video.duration;
     if (!Number.isFinite(reportedDuration) || reportedDuration <= 0) return;
+
+    const completionAt = active.completeAtSeconds;
+    const hasCustomCompletion =
+      completionAt !== null && completionAt > 0 && completionAt <= reportedDuration;
+    if (hasCustomCompletion && playbackPosition >= completionAt) {
+      if (!completionThresholdTriggeredRef.current) {
+        completionThresholdTriggeredRef.current = true;
+        saveProgress(true, playbackPosition);
+      }
+      if (
+        active.nextEpisode &&
+        autoPlayNext &&
+        !nextEpisodeDismissedRef.current &&
+        !showNextEpisodeModal
+      ) {
+        setShowNextEpisodeModal(true);
+      }
+      return;
+    }
+
+    if (
+      !suppressSkipBreakpointCheck &&
+      previousSkipBreakpointPosition !== null &&
+      playbackPosition > previousSkipBreakpointPosition
+    ) {
+      const breakpoint = active.skipBreakpoints.find(
+        ({ triggerSeconds, targetSeconds }) =>
+          triggerSeconds < reportedDuration &&
+          targetSeconds < reportedDuration &&
+          previousSkipBreakpointPosition < triggerSeconds &&
+          playbackPosition >= triggerSeconds &&
+          playbackPosition < targetSeconds,
+      );
+      if (breakpoint) {
+        setSkipBreakpointPosition(breakpoint.targetSeconds, breakpoint.targetSeconds);
+        seekToAbsoluteTime(
+          breakpoint.targetSeconds,
+          true,
+          source.playbackMode !== 'direct',
+        );
+        return;
+      }
+    }
+
     if (Date.now() < suppressNextEpisodeUntilRef.current) return;
     if (
       !Number.isFinite(playbackPosition) ||
@@ -618,20 +727,39 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({ media, episodeId }) =>
       return;
     }
 
-    // Offer the next episode with 15s left, or at 94% for files whose reported
-    // duration includes credits padding.
+    // Start series autoplay at the same point the backend marks the episode
+    // complete, avoiding a transition that leaves the saved progress unfinished.
     const remainingSeconds = reportedDuration - playbackPosition;
     const percentage = (playbackPosition / reportedDuration) * 100;
+    const savedDurationSeconds = Math.floor(reportedDuration);
+    const savedPositionSeconds = Math.floor(playbackPosition);
+    const savedPercentage =
+      savedDurationSeconds > 0 ? (savedPositionSeconds / savedDurationSeconds) * 100 : 0;
     const isNearEnd =
-      (remainingSeconds >= 0 && remainingSeconds <= 15) || (percentage >= 94 && percentage <= 100);
+      media.type === 'series'
+        ? savedPercentage >= DEFAULT_SERIES_COMPLETION_THRESHOLD_PERCENT && savedPercentage <= 100
+        : (remainingSeconds >= 0 && remainingSeconds <= 15) ||
+          (percentage >= 94 && percentage <= 100);
+    const hasUpcomingSkipBreakpoint =
+      autoPlayNext &&
+      active.nextEpisode &&
+      active.skipBreakpoints.some(
+        ({ triggerSeconds, targetSeconds }) =>
+          triggerSeconds < reportedDuration &&
+          targetSeconds < reportedDuration &&
+          playbackPosition < triggerSeconds,
+      );
 
     if (
       isNearEnd &&
+      !completionThresholdTriggeredRef.current &&
+      !hasUpcomingSkipBreakpoint &&
       !showNextEpisodeModal &&
       !nextEpisodeDismissedRef.current &&
       active.nextEpisode
     ) {
-      saveProgress(true);
+      completionThresholdTriggeredRef.current = true;
+      saveProgress(true, playbackPosition);
       if (autoPlayNext) setShowNextEpisodeModal(true);
     }
   };
@@ -819,17 +947,24 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({ media, episodeId }) =>
     const reportedDuration = active.analyzedDuration || duration || video?.duration || 0;
     const playbackPosition = (video?.currentTime || 0) + timelineOffset;
 
+    const completionAt = active.completeAtSeconds;
+    const reachedCustomCompletion =
+      completionAt !== null &&
+      completionAt > 0 &&
+      completionAt <= reportedDuration &&
+      playbackPosition >= completionAt;
+
     if (
       Date.now() < suppressNextEpisodeUntilRef.current ||
       !Number.isFinite(reportedDuration) ||
       reportedDuration <= 0 ||
       !Number.isFinite(playbackPosition) ||
-      playbackPosition < reportedDuration - 15
+      (!reachedCustomCompletion && playbackPosition < reportedDuration - 15)
     ) {
       return;
     }
 
-    saveProgress(true);
+    saveProgress(true, playbackPosition);
     if (active.nextEpisode && autoPlayNext && !nextEpisodeDismissedRef.current) {
       setShowNextEpisodeModal(true);
     }
@@ -877,14 +1012,14 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({ media, episodeId }) =>
 
   const toggleFullscreen = useCallback(() => {
     const video = videoRef.current;
-    const container = playerContainerRef.current;
+    const container = fullscreenContainerRef?.current ?? playerContainerRef.current;
     if (!video || !container) return;
 
     setFullscreenError(null);
     void togglePlayerFullscreen(video, container).catch(() => {
       setFullscreenError(t.player.fullscreenUnsupported);
     });
-  }, []);
+  }, [fullscreenContainerRef]);
 
   const togglePiP = useCallback(() => {
     const video = videoRef.current;
@@ -945,8 +1080,7 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({ media, episodeId }) =>
 
   const handleToggleTranscode = () => {
     const video = videoRef.current;
-    const compatibilityMode: PlaybackMode =
-      recommendedMode === 'direct' ? (isSafari ? 'hls' : 'audio') : recommendedMode;
+    const compatibilityMode: PlaybackMode = recommendedMode;
     const nextMode: PlaybackMode =
       source.playbackMode === compatibilityMode ? 'direct' : compatibilityMode;
 
@@ -993,7 +1127,9 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({ media, episodeId }) =>
       ref={playerContainerRef}
       onMouseMove={resetHideTimer}
       onTouchStart={resetHideTimer}
-      className="fixed inset-x-0 top-0 z-50 flex h-[100dvh] min-h-[100svh] w-screen select-none flex-col justify-between overflow-hidden bg-black"
+      className={`fixed inset-x-0 top-0 z-50 flex h-[100dvh] min-h-[100svh] w-screen select-none flex-col justify-between overflow-hidden bg-black ${
+        controlsVisible ? '' : 'cursor-none'
+      }`}
     >
       <style>{cueStyle}</style>
 
@@ -1052,7 +1188,9 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({ media, episodeId }) =>
         onEnded={handleVideoEnded}
         onError={handleSourceError}
         onClick={togglePlay}
-        className={`h-full w-full cursor-pointer object-contain transition-all duration-500 ${
+        className={`h-full w-full ${
+          controlsVisible ? 'cursor-pointer' : 'cursor-none'
+        } object-contain transition-all duration-500 ${
           cinemaMode
             ? 'scale-[0.94] rounded-2xl border border-amber-500/20 shadow-[0_0_100px_rgba(245,158,11,0.2)]'
             : ''
@@ -1114,6 +1252,10 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({ media, episodeId }) =>
           savedPositionSeconds={active.progress?.positionSeconds || 0}
           onResume={() => {
             if (active.progress?.positionSeconds) {
+              setSkipBreakpointPosition(
+                active.progress.positionSeconds,
+                active.progress.positionSeconds,
+              );
               seekToAbsoluteTime(
                 active.progress.positionSeconds,
                 true,
@@ -1123,7 +1265,8 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({ media, episodeId }) =>
             setShowResumeModal(false);
           }}
           onRestart={() => {
-            seekToAbsoluteTime(0);
+            setSkipBreakpointPosition(active.startAtSeconds, active.startAtSeconds);
+            seekToAbsoluteTime(active.startAtSeconds);
             setShowResumeModal(false);
           }}
         />

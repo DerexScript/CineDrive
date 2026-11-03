@@ -1,5 +1,10 @@
 import type { FastifyPluginAsync } from 'fastify';
-import { mediaQuerySchema, randomMediaQuerySchema } from '@cinedrive/shared';
+import {
+  mediaQuerySchema,
+  playbackSkipBreakpointsSchema,
+  randomMediaQuerySchema,
+} from '@cinedrive/shared';
+import type { PlaybackSkipBreakpoint } from '@cinedrive/shared';
 import type { Prisma } from '@cinedrive/prisma';
 import { buildPlaybackPlan } from '../services/playback-plan.service.js';
 import { ownedLibraryFilter, ownedMediaFilter } from '../utils/library-access.js';
@@ -11,6 +16,13 @@ function safeJsonParse<T>(raw: string | null | undefined, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function decodePlaybackSkipBreakpoints(raw: string | null): PlaybackSkipBreakpoint[] | null {
+  if (raw === null) return null;
+  const parsed = safeJsonParse<unknown>(raw, null);
+  const validated = playbackSkipBreakpointsSchema.safeParse(parsed);
+  return validated.success ? validated.data : [];
 }
 
 const quoteFtsPhrase = (value: string) => `"${value.replaceAll('"', '""')}"`;
@@ -520,6 +532,10 @@ export const mediaQueryRoutes: FastifyPluginAsync = async (fastify) => {
           favorites: {
             where: { userId },
           },
+          seriesNotes: {
+            where: { userId },
+            select: { note: true },
+          },
         },
       });
 
@@ -533,6 +549,7 @@ export const mediaQueryRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
+      const { skipBreakpointsJson, seriesNotes, ...mediaItem } = item;
       const formattedSubtitles = item.subtitles.map(safeSubtitleWithUrl);
 
       const formattedSeries = item.series
@@ -543,9 +560,14 @@ export const mediaQueryRoutes: FastifyPluginAsync = async (fastify) => {
               return {
                 ...season,
                 episodes: season.episodes.map((ep) => {
-                  const { driveFile, ...episode } = ep;
+                  const {
+                    driveFile,
+                    skipBreakpointsJson: episodeSkipBreakpointsJson,
+                    ...episode
+                  } = ep;
                   return {
                     ...episode,
+                    skipBreakpoints: decodePlaybackSkipBreakpoints(episodeSkipBreakpointsJson),
                     technicalMetadata: driveFile,
                     playbackPlan: buildPlaybackPlan(driveFile),
                     subtitles: ep.subtitles.map(safeSubtitleWithUrl),
@@ -567,10 +589,12 @@ export const mediaQueryRoutes: FastifyPluginAsync = async (fastify) => {
 
       return reply.status(200).send({
         media: {
-          ...item,
-          genres: safeJsonParse<string[]>(item.genres, []),
+          ...mediaItem,
+          personalNote: seriesNotes[0]?.note ?? null,
+          skipBreakpoints: decodePlaybackSkipBreakpoints(skipBreakpointsJson) ?? [],
+          genres: safeJsonParse<string[]>(mediaItem.genres, []),
           cast: safeJsonParse<Array<{ name: string; character?: string; profileUrl?: string }>>(
-            item.cast,
+            mediaItem.cast,
             [],
           ),
           isFavorite: item.favorites.length > 0,
@@ -610,7 +634,18 @@ export const mediaQueryRoutes: FastifyPluginAsync = async (fastify) => {
       },
     });
 
-    return reply.status(200).send({ seasons });
+    return reply.status(200).send({
+      seasons: seasons.map((season) => ({
+        ...season,
+        episodes: season.episodes.map((episode) => {
+          const { skipBreakpointsJson, ...episodeData } = episode;
+          return {
+            ...episodeData,
+            skipBreakpoints: decodePlaybackSkipBreakpoints(skipBreakpointsJson),
+          };
+        }),
+      })),
+    });
   });
 
   // GET /api/seasons/:id/episodes
@@ -633,10 +668,14 @@ export const mediaQueryRoutes: FastifyPluginAsync = async (fastify) => {
       },
     });
 
-    const formattedEpisodes = episodes.map((ep) => ({
-      ...ep,
-      subtitles: ep.subtitles.map(safeSubtitleWithUrl),
-    }));
+    const formattedEpisodes = episodes.map((ep) => {
+      const { skipBreakpointsJson, ...episode } = ep;
+      return {
+        ...episode,
+        skipBreakpoints: decodePlaybackSkipBreakpoints(skipBreakpointsJson),
+        subtitles: ep.subtitles.map(safeSubtitleWithUrl),
+      };
+    });
 
     return reply.status(200).send({ episodes: formattedEpisodes });
   });

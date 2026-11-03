@@ -31,13 +31,17 @@ export default function setup(project: TestProject) {
     fs.rmdirSync(path.dirname(testDbPath));
   };
   try {
-    execFileSync('npx', ['prisma', 'migrate', 'deploy'], {
-      cwd: serverRoot,
-      // Prisma's schema engine needs its debug path enabled inside the sandboxed
-      // macOS app. Scope this workaround to the disposable test database.
-      env: { ...process.env, DATABASE_URL: databaseUrl, RUST_LOG: 'debug' },
-      stdio: 'inherit',
-    });
+    execFileSync(
+      process.execPath,
+      [path.join(serverRoot, 'node_modules', 'prisma', 'build', 'index.js'), 'migrate', 'deploy'],
+      {
+        cwd: serverRoot,
+        // Prisma's schema engine needs its debug path enabled inside the sandboxed
+        // macOS app. Scope this workaround to the disposable test database.
+        env: { ...process.env, DATABASE_URL: databaseUrl, RUST_LOG: 'debug' },
+        stdio: 'inherit',
+      },
+    );
   } catch (error) {
     cleanup();
     throw error;

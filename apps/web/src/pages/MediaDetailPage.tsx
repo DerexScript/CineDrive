@@ -31,6 +31,11 @@ import { toast } from '../stores/useToastStore';
 import { MediaCard } from '../components/media/MediaCard';
 import { EditMetadataModal } from '../components/EditMetadataModal';
 import { TrailerModal } from '../components/media/TrailerModal';
+import {
+  EpisodePlaybackSettings,
+  SeriesPlaybackSettings,
+} from '../components/media/SeriesPlaybackSettings';
+import { SeriesNotes } from '../components/media/SeriesNotes';
 import { extractYoutubeId } from '../utils/youtube';
 import type { EpisodeType } from '../types/media';
 import { getHeroArtworkUrl, getPosterUrl } from '../utils/mediaImages';
@@ -261,10 +266,7 @@ export const MediaDetailPage: React.FC = () => {
             same size and saturation.
           */}
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              onClick={() => navigate(`/watch/${media.id}`)}
-              className="cd-primary"
-            >
+            <button onClick={() => navigate(`/watch/${media.id}`)} className="cd-primary">
               <Play className="h-5 w-5 fill-current" />
               {media.progress && media.progress.percentage > 0
                 ? t.mediaDetail.resume
@@ -339,6 +341,19 @@ export const MediaDetailPage: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {media.type === 'series' && (
+        <SeriesPlaybackSettings
+          mediaId={media.id}
+          startAtSeconds={media.startAtSeconds}
+          completeAtSeconds={media.completeAtSeconds}
+          skipBreakpoints={media.skipBreakpoints}
+        />
+      )}
+
+      {media.type === 'series' && (
+        <SeriesNotes mediaId={media.id} personalNote={media.personalNote} />
+      )}
 
       {/* Cast Members Section ("Oyuncu Kadrosu") */}
       {media.cast && media.cast.length > 0 && (
@@ -423,80 +438,86 @@ export const MediaDetailPage: React.FC = () => {
                 const isWatched = epProgress?.completed;
 
                 return (
-                  <Link
-                    key={episode.id}
-                    to={`/watch/${media.id}/${episode.id}`}
-                    className="group flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-zinc-900/50 hover:bg-zinc-900 border border-zinc-800/70 hover:border-brand-500/50 rounded-2xl transition-all gap-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
-                  >
-                    <div className="flex w-full items-start md:items-center gap-4 flex-1 min-w-0">
-                      {/* Episode Thumbnail */}
-                      <div className="relative w-24 sm:w-36 md:w-44 aspect-video bg-zinc-800 rounded-xl overflow-hidden flex-shrink-0 border border-zinc-700/40">
-                        {episode.stillUrl ? (
-                          <img
-                            src={episode.stillUrl}
-                            alt=""
-                            loading="lazy"
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-zinc-600 bg-zinc-900">
-                            <Tv className="w-8 h-8" />
-                          </div>
-                        )}
+                  <div key={episode.id} className="space-y-2">
+                    <Link
+                      to={`/watch/${media.id}/${episode.id}`}
+                      className="group flex flex-col md:flex-row items-start md:items-center justify-between p-4 bg-zinc-900/50 hover:bg-zinc-900 border border-zinc-800/70 hover:border-brand-500/50 rounded-2xl transition-all gap-4 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+                    >
+                      <div className="flex w-full items-start md:items-center gap-4 flex-1 min-w-0">
+                        {/* Episode Thumbnail */}
+                        <div className="relative w-24 sm:w-36 md:w-44 aspect-video bg-zinc-800 rounded-xl overflow-hidden flex-shrink-0 border border-zinc-700/40">
+                          {episode.stillUrl ? (
+                            <img
+                              src={episode.stillUrl}
+                              alt=""
+                              loading="lazy"
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-zinc-600 bg-zinc-900">
+                              <Tv className="w-8 h-8" />
+                            </div>
+                          )}
 
-                        {/* Play Button Overlay */}
-                        <div
-                          aria-hidden="true"
-                          className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors flex items-center justify-center"
-                        >
-                          <div className="p-2.5 bg-brand-600 group-hover:bg-brand-500 text-white rounded-full shadow-lg shadow-brand-500/30 transform scale-95 group-hover:scale-105 transition-transform">
-                            <Play className="w-4 h-4 fill-current translate-x-0.5" />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Episode Info */}
-                      <div className="space-y-1.5 flex-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="px-2 py-0.5 rounded-md bg-brand-600/20 border border-brand-500/30 text-brand-400 text-xs font-bold font-display">
-                            {episode.seasonNumber}x
-                            {episode.episodeNumber < 10
-                              ? `0${episode.episodeNumber}`
-                              : episode.episodeNumber}
-                          </span>
-                          <h4 className="min-w-0 break-words text-sm md:text-base font-semibold text-zinc-100 group-hover:text-brand-300 transition-colors">
-                            {episode.title}
-                          </h4>
-                          {isWatched && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
-                        </div>
-
-                        {episode.overview && (
-                          <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed font-normal">
-                            {episode.overview}
-                          </p>
-                        )}
-
-                        {episode.duration && (
-                          <div className="flex items-center gap-1 text-[11px] text-zinc-500 font-medium">
-                            <Clock className="w-3 h-3" />
-                            <span>{t.common.minutesLong(Math.round(episode.duration / 60))}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Progress Indicator */}
-                    {epProgress && epProgress.percentage > 0 && (
-                      <div className="w-full md:w-28 flex-shrink-0">
-                        <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                          {/* Play Button Overlay */}
                           <div
-                            className="h-full bg-brand-500 transition-all"
-                            style={{ width: `${Math.min(100, epProgress.percentage)}%` }}
-                          />
+                            aria-hidden="true"
+                            className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors flex items-center justify-center"
+                          >
+                            <div className="p-2.5 bg-brand-600 group-hover:bg-brand-500 text-white rounded-full shadow-lg shadow-brand-500/30 transform scale-95 group-hover:scale-105 transition-transform">
+                              <Play className="w-4 h-4 fill-current translate-x-0.5" />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Episode Info */}
+                        <div className="space-y-1.5 flex-1 min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="px-2 py-0.5 rounded-md bg-brand-600/20 border border-brand-500/30 text-brand-400 text-xs font-bold font-display">
+                              {episode.seasonNumber}x
+                              {episode.episodeNumber < 10
+                                ? `0${episode.episodeNumber}`
+                                : episode.episodeNumber}
+                            </span>
+                            <h4 className="min-w-0 break-words text-sm md:text-base font-semibold text-zinc-100 group-hover:text-brand-300 transition-colors">
+                              {episode.title}
+                            </h4>
+                            {isWatched && <CheckCircle2 className="w-4 h-4 text-emerald-400" />}
+                          </div>
+
+                          {episode.overview && (
+                            <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed font-normal">
+                              {episode.overview}
+                            </p>
+                          )}
+
+                          {episode.duration && (
+                            <div className="flex items-center gap-1 text-[11px] text-zinc-500 font-medium">
+                              <Clock className="w-3 h-3" />
+                              <span>{t.common.minutesLong(Math.round(episode.duration / 60))}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    )}
-                  </Link>
+
+                      {/* Progress Indicator */}
+                      {epProgress && epProgress.percentage > 0 && (
+                        <div className="w-full md:w-28 flex-shrink-0">
+                          <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-brand-500 transition-all"
+                              style={{ width: `${Math.min(100, epProgress.percentage)}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </Link>
+                    <EpisodePlaybackSettings
+                      mediaId={media.id}
+                      episode={episode}
+                      seriesSkipBreakpoints={media.skipBreakpoints}
+                    />
+                  </div>
                 );
               })
             )}

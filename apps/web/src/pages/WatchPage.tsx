@@ -9,6 +9,7 @@ import { t } from '../i18n';
 export const WatchPage: React.FC = () => {
   const { mediaId, episodeId } = useParams<{ mediaId: string; episodeId?: string }>();
   const navigate = useNavigate();
+  const fullscreenContainerRef = React.useRef<HTMLDivElement>(null);
 
   const { data: media, isLoading, isError, error, refetch } = useMediaDetailQuery(mediaId);
 
@@ -46,5 +47,21 @@ export const WatchPage: React.FC = () => {
     );
   }
 
-  return <MediaPlayer media={media} episodeId={episodeId} />;
+  // Keep one fullscreen host across episode navigation while remounting the
+  // player itself, so stale media events cannot affect the next episode.
+  const playerKey = JSON.stringify([
+    media.id,
+    episodeId ?? media.progress?.episodeId ?? null,
+  ]);
+
+  return (
+    <div ref={fullscreenContainerRef} className="fixed inset-0 z-50 bg-black">
+      <MediaPlayer
+        key={playerKey}
+        media={media}
+        episodeId={episodeId}
+        fullscreenContainerRef={fullscreenContainerRef}
+      />
+    </div>
+  );
 };

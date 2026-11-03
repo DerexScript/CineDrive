@@ -298,6 +298,80 @@ describe('Playback & History API Integration Tests', () => {
     expect(historyRows).toBe(1);
   });
 
+  it('inherits series completion settings, allows episode overrides, and falls back when the limit is past duration', async () => {
+    const loginRes = await app.inject({
+      method: 'POST',
+      url: '/api/auth/login',
+      payload: { email: env.ADMIN_EMAIL, password: env.ADMIN_PASSWORD },
+    });
+    const sessionCookie = loginRes.cookies.find((cookie) => cookie.name === 'session_id');
+    const episode = await app.prisma.episode.findFirstOrThrow({
+      where: { mediaItemId: 'media_test_pb_series' },
+    });
+
+    const seriesSettings = await app.inject({
+      method: 'PATCH',
+      url: '/api/media/media_test_pb_series/playback-settings',
+      cookies: { session_id: sessionCookie!.value },
+      payload: { startAtSeconds: 90, completeAtSeconds: 2400 },
+    });
+    expect(seriesSettings.statusCode).toBe(200);
+    expect(seriesSettings.json().mediaItem).toMatchObject({
+      startAtSeconds: 90,
+      completeAtSeconds: 2400,
+    });
+
+    const saveEpisodeProgress = (positionSeconds: number) =>
+      app.inject({
+        method: 'PUT',
+        url: '/api/playback/progress',
+        cookies: { session_id: sessionCookie!.value },
+        payload: {
+          mediaItemId: 'media_test_pb_series',
+          episodeId: episode.id,
+          positionSeconds,
+          durationSeconds: 3600,
+        },
+      });
+
+    expect((await saveEpisodeProgress(2399)).json().progress.completed).toBe(false);
+    expect((await saveEpisodeProgress(2400)).json().progress.completed).toBe(true);
+
+    const episodeSettings = await app.inject({
+      method: 'PATCH',
+      url: `/api/media/media_test_pb_series/episodes/${episode.id}/playback-settings`,
+      cookies: { session_id: sessionCookie!.value },
+      payload: { startAtSeconds: null, completeAtSeconds: 2700 },
+    });
+    expect(episodeSettings.statusCode).toBe(200);
+    expect(episodeSettings.json().episode).toMatchObject({
+      startAtSeconds: null,
+      completeAtSeconds: 2700,
+    });
+
+    expect((await saveEpisodeProgress(2600)).json().progress.completed).toBe(false);
+    const overriddenThreshold = await saveEpisodeProgress(2700);
+    expect(overriddenThreshold.json().progress.completed).toBe(true);
+
+    await app.prisma.episode.update({
+      where: { id: episode.id },
+      data: { completeAtSeconds: 4000 },
+    });
+    const thresholdPastDuration = await saveEpisodeProgress(3312);
+    expect(thresholdPastDuration.json().progress.completed).toBe(true);
+    expect(
+      await app.prisma.watchHistory.findUnique({
+        where: {
+          userId_mediaItemId_trackingKey: {
+            userId: (await app.authService.ensureAdminUserExists()).id,
+            mediaItemId: 'media_test_pb_series',
+            trackingKey: episode.id,
+          },
+        },
+      }),
+    ).toMatchObject({ completed: true });
+  });
+
   it('orders progress by server revision and client sequence, not device wall-clock time', async () => {
     const loginRes = await app.inject({
       method: 'POST',

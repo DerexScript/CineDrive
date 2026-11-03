@@ -19,6 +19,9 @@ import type {
   DriveSourceValidationDto,
   UpdateProgressInput,
   UpdateMediaMetadataInput,
+  UpdateSeriesNoteInput,
+  UpdateSeriesPlaybackSettingsInput,
+  UpdateEpisodePlaybackSettingsInput,
   CreateUserInput,
   UpdateUserInput,
   LibraryMemberDto,
@@ -628,6 +631,82 @@ export function useUpdateMediaMetadataMutation() {
     onSuccess: (updatedItem) => {
       queryClient.invalidateQueries({ queryKey: ['media'] });
       queryClient.invalidateQueries({ queryKey: ['mediaDetail', updatedItem.id] });
+    },
+  });
+}
+
+export function useUpdateSeriesPlaybackSettingsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: UpdateSeriesPlaybackSettingsInput }) => {
+      try {
+        const res = await apiClient.patch<{ mediaItem: MediaItemType }>(
+          `/media/${id}/playback-settings`,
+          data,
+        );
+        return res.data.mediaItem;
+      } catch (err) {
+        throw parseApiError(err);
+      }
+    },
+    onSuccess: (updatedItem) => {
+      queryClient.invalidateQueries({ queryKey: ['media'] });
+      queryClient.invalidateQueries({ queryKey: ['mediaDetail', updatedItem.id] });
+    },
+  });
+}
+
+export function useUpdateSeriesNoteMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: UpdateSeriesNoteInput }) => {
+      try {
+        const res = await apiClient.patch<{ personalNote: string | null }>(
+          `/media/${id}/note`,
+          data,
+        );
+        return res.data.personalNote;
+      } catch (err) {
+        throw parseApiError(err);
+      }
+    },
+    onSuccess: (personalNote, variables) => {
+      queryClient.setQueryData<MediaItemType>(['mediaDetail', variables.id], (old) =>
+        old ? { ...old, personalNote } : old,
+      );
+      queryClient.setQueryData<MediaDetailType>(
+        ['mediaDetail', variables.id, 'summary'],
+        (old) => (old ? { ...old, personalNote } : old),
+      );
+    },
+  });
+}
+
+export function useUpdateEpisodePlaybackSettingsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      mediaId,
+      episodeId,
+      data,
+    }: {
+      mediaId: string;
+      episodeId: string;
+      data: UpdateEpisodePlaybackSettingsInput;
+    }) => {
+      try {
+        const res = await apiClient.patch<{ episode: EpisodeType }>(
+          `/media/${mediaId}/episodes/${episodeId}/playback-settings`,
+          data,
+        );
+        return res.data.episode;
+      } catch (err) {
+        throw parseApiError(err);
+      }
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['mediaDetail', variables.mediaId] });
+      queryClient.invalidateQueries({ queryKey: ['seasonEpisodes'] });
     },
   });
 }

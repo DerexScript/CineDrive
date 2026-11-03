@@ -35,6 +35,7 @@ model User {
   googleConnections           GoogleConnection[]
   libraries                   Library[]
   libraryMemberships          LibraryMembership[]
+  seriesNotes                 SeriesNote[]
   playbackProgresses          PlaybackProgress[]
   watchHistories              WatchHistory[]
   favorites                   Favorite[]
@@ -245,10 +246,14 @@ model MediaItem {
   contentRating       String?
   tmdbId              Int?
   imdbId              String?
+  startAtSeconds      Int?
+  completeAtSeconds   Int?
+  skipBreakpointsJson String?
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
   movie               Movie?
   series              Series?
+  seriesNotes         SeriesNote[]
   episodes            Episode[]
   subtitles           SubtitleTrack[]
   playbackProgresses  PlaybackProgress[]
@@ -276,6 +281,20 @@ model Series {
   mediaItem   MediaItem @relation(fields: [mediaItemId], references: [id], onDelete: Cascade)
   seasons     Season[]
   metadataEnrichmentJobs MetadataEnrichmentJob[]
+}
+
+model SeriesNote {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mediaItemId String
+  mediaItem   MediaItem @relation(fields: [mediaItemId], references: [id], onDelete: Cascade)
+  note        String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([userId, mediaItemId])
+  @@index([mediaItemId])
 }
 
 model MetadataEnrichmentJob {
@@ -331,6 +350,9 @@ model Episode {
   episodeNumber      Int
   title              String
   duration           Float?
+  startAtSeconds     Int?
+  completeAtSeconds  Int?
+  skipBreakpointsJson String?
   overview           String?
   stillUrl           String?
   subtitles          SubtitleTrack[]

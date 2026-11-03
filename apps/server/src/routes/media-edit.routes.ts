@@ -1,10 +1,26 @@
 import type { FastifyPluginAsync } from 'fastify';
 import {
   updateMediaMetadataSchema,
+  updateSeriesPlaybackSettingsSchema,
+  updateEpisodePlaybackSettingsSchema,
+  playbackSkipBreakpointsSchema,
   batchDeleteMediaSchema,
+  updateSeriesNoteSchema,
+  type PlaybackSkipBreakpoint,
   type UpdateMediaMetadataInput,
+  type UpdateSeriesNoteInput,
 } from '@cinedrive/shared';
-import { manageableMediaFilter } from '../utils/library-access.js';
+import { manageableMediaFilter, ownedMediaFilter } from '../utils/library-access.js';
+
+const decodeSkipBreakpoints = (raw: string | null): PlaybackSkipBreakpoint[] | null => {
+  if (raw === null) return null;
+  try {
+    const parsed = playbackSkipBreakpointsSchema.safeParse(JSON.parse(raw));
+    return parsed.success ? parsed.data : [];
+  } catch {
+    return [];
+  }
+};
 
 export const mediaEditRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', fastify.authenticate);
@@ -169,12 +185,225 @@ export const mediaEditRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
+      const { skipBreakpointsJson, ...updatedMediaItem } = updated;
+
       return reply.status(200).send({
         message: 'Medya bilgileri başarıyla güncellendi.',
-        mediaItem: updated,
+        mediaItem: {
+          ...updatedMediaItem,
+          skipBreakpoints: decodeSkipBreakpoints(skipBreakpointsJson) ?? [],
+        },
       });
     },
   );
+
+  fastify.patch<{ Params: { id: string }; Body: UpdateSeriesNoteInput }>(
+    '/:id/note',
+    async (request, reply) => {
+      const parsed = updateSeriesNoteSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.status(400).send({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: parsed.error.issues[0]?.message || 'Invalid series note.',
+            requestId: request.id,
+          },
+        });
+      }
+
+      const userId = request.user!.id;
+      const note = parsed.data.note.trim() ? parsed.data.note : null;
+      const result = await fastify.prisma.$transaction(async (tx) => {
+        const series = await tx.mediaItem.findFirst({
+          where: {
+            id: request.params.id,
+            type: 'series',
+            ...ownedMediaFilter(userId),
+          },
+          select: { id: true },
+        });
+        if (!series) return null;
+
+        if (note === null) {
+          await tx.seriesNote.deleteMany({ where: { userId, mediaItemId: series.id } });
+        } else {
+          await tx.seriesNote.upsert({
+            where: { userId_mediaItemId: { userId, mediaItemId: series.id } },
+            create: { userId, mediaItemId: series.id, note },
+            update: { note },
+          });
+        }
+
+        return { note };
+      });
+
+      if (!result) {
+        return reply.status(404).send({
+          error: {
+            code: 'MEDIA_NOT_FOUND',
+            message: 'Series not found or not accessible.',
+            requestId: request.id,
+          },
+        });
+      }
+
+      return reply.status(200).send({ personalNote: result.note });
+    },
+  );
+
+  fastify.patch<{
+    Params: { id: string };
+    Body: {
+      startAtSeconds: number | null;
+      completeAtSeconds: number | null;
+      skipBreakpoints?: PlaybackSkipBreakpoint[];
+    };
+  }>('/:id/playback-settings', async (request, reply) => {
+    const parsed = updateSeriesPlaybackSettingsSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: parsed.error.issues[0]?.message || 'Invalid playback settings.',
+          requestId: request.id,
+        },
+      });
+    }
+
+    const skipBreakpoints = parsed.data.skipBreakpoints
+      ? [...parsed.data.skipBreakpoints].sort(
+          (left, right) => left.triggerSeconds - right.triggerSeconds,
+        )
+      : undefined;
+    const mediaItem = await fastify.prisma.$transaction(async (tx) => {
+      const updated = await tx.mediaItem.updateMany({
+        where: {
+          id: request.params.id,
+          type: 'series',
+          ...manageableMediaFilter(request.user!.id),
+        },
+        data: {
+          startAtSeconds: parsed.data.startAtSeconds,
+          completeAtSeconds: parsed.data.completeAtSeconds,
+          ...(skipBreakpoints !== undefined
+            ? { skipBreakpointsJson: JSON.stringify(skipBreakpoints) }
+            : {}),
+        },
+      });
+      if (!updated.count) return null;
+      return tx.mediaItem.findUnique({
+        where: { id: request.params.id },
+        select: {
+          id: true,
+          startAtSeconds: true,
+          completeAtSeconds: true,
+          skipBreakpointsJson: true,
+        },
+      });
+    });
+    if (!mediaItem) {
+      return reply.status(404).send({
+        error: {
+          code: 'MEDIA_NOT_FOUND',
+          message: 'Series not found or not editable.',
+          requestId: request.id,
+        },
+      });
+    }
+
+    return reply.status(200).send({
+      mediaItem: {
+        id: mediaItem.id,
+        startAtSeconds: mediaItem.startAtSeconds,
+        completeAtSeconds: mediaItem.completeAtSeconds,
+        skipBreakpoints:
+          skipBreakpoints ?? decodeSkipBreakpoints(mediaItem.skipBreakpointsJson) ?? [],
+      },
+    });
+  });
+
+  fastify.patch<{
+    Params: { id: string; episodeId: string };
+    Body: {
+      startAtSeconds: number | null;
+      completeAtSeconds: number | null;
+      skipBreakpoints?: PlaybackSkipBreakpoint[] | null;
+    };
+  }>('/:id/episodes/:episodeId/playback-settings', async (request, reply) => {
+    const parsed = updateEpisodePlaybackSettingsSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: parsed.error.issues[0]?.message || 'Invalid playback settings.',
+          requestId: request.id,
+        },
+      });
+    }
+
+    const skipBreakpoints =
+      parsed.data.skipBreakpoints === undefined || parsed.data.skipBreakpoints === null
+        ? parsed.data.skipBreakpoints
+        : [...parsed.data.skipBreakpoints].sort(
+            (left, right) => left.triggerSeconds - right.triggerSeconds,
+          );
+    const episode = await fastify.prisma.$transaction(async (tx) => {
+      const updated = await tx.episode.updateMany({
+        where: {
+          id: request.params.episodeId,
+          mediaItemId: request.params.id,
+          mediaItem: {
+            is: {
+              id: request.params.id,
+              type: 'series',
+              ...manageableMediaFilter(request.user!.id),
+            },
+          },
+        },
+        data: {
+          startAtSeconds: parsed.data.startAtSeconds,
+          completeAtSeconds: parsed.data.completeAtSeconds,
+          ...(skipBreakpoints !== undefined
+            ? {
+                skipBreakpointsJson:
+                  skipBreakpoints === null ? null : JSON.stringify(skipBreakpoints),
+              }
+            : {}),
+        },
+      });
+      if (!updated.count) return null;
+      return tx.episode.findUnique({
+        where: { id: request.params.episodeId },
+        select: {
+          id: true,
+          startAtSeconds: true,
+          completeAtSeconds: true,
+          skipBreakpointsJson: true,
+        },
+      });
+    });
+    if (!episode) {
+      return reply.status(404).send({
+        error: {
+          code: 'MEDIA_NOT_FOUND',
+          message: 'Episode not found or not editable.',
+          requestId: request.id,
+        },
+      });
+    }
+
+    return reply.status(200).send({
+      episode: {
+        id: episode.id,
+        startAtSeconds: episode.startAtSeconds,
+        completeAtSeconds: episode.completeAtSeconds,
+        skipBreakpoints:
+          skipBreakpoints === undefined
+            ? decodeSkipBreakpoints(episode.skipBreakpointsJson)
+            : skipBreakpoints,
+      },
+    });
+  });
 
   // DELETE /api/media/:id: Remove a media item from the database
   fastify.delete<{ Params: { id: string } }>('/:id', async (request, reply) => {

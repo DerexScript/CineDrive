@@ -1,5 +1,8 @@
 import type { PrismaClient, Prisma } from '@cinedrive/prisma';
-import type { UpdateProgressInput } from '@cinedrive/shared';
+import {
+  DEFAULT_SERIES_COMPLETION_THRESHOLD_PERCENT,
+  type UpdateProgressInput,
+} from '@cinedrive/shared';
 import { ownedMediaFilter } from '../utils/library-access.js';
 
 const DEFAULT_COMPLETION_THRESHOLD_PERCENT = 92;
@@ -59,7 +62,6 @@ export class PlaybackService {
 
     // 2. Calculate percentage & completed status
     const percentage = durationSeconds > 0 ? (positionSeconds / durationSeconds) * 100 : 0;
-    const isCompleted = percentage >= DEFAULT_COMPLETION_THRESHOLD_PERCENT;
     const trackingKey = episodeId || GENERAL_TRACKING_KEY;
 
     // All reads and writes below share one SQLite transaction. The non-null
@@ -73,10 +75,28 @@ export class PlaybackService {
       });
       if (!mediaItem) throw new Error('MEDIA_NOT_FOUND');
 
+      const defaultCompletionThresholdPercent =
+        mediaItem.type === 'series'
+          ? DEFAULT_SERIES_COMPLETION_THRESHOLD_PERCENT
+          : DEFAULT_COMPLETION_THRESHOLD_PERCENT;
+
+      let episode: { completeAtSeconds: number | null } | null = null;
       if (episodeId) {
-        const episode = await tx.episode.findFirst({ where: { id: episodeId, mediaItemId } });
+        episode = await tx.episode.findFirst({
+          where: { id: episodeId, mediaItemId },
+          select: { completeAtSeconds: true },
+        });
         if (!episode) throw new Error('INVALID_EPISODE');
       }
+
+      const customCompletionSeconds = episode
+        ? (episode.completeAtSeconds ?? mediaItem.completeAtSeconds)
+        : null;
+      const hasUsableCustomThreshold =
+        customCompletionSeconds !== null && customCompletionSeconds <= durationSeconds;
+      const isCompleted = hasUsableCustomThreshold
+        ? positionSeconds >= customCompletionSeconds
+        : percentage >= defaultCompletionThresholdPercent;
 
       let existing = await tx.playbackProgress.findUnique({
         where: {

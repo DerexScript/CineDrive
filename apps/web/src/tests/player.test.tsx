@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import { BrowserRouter } from 'react-router-dom';
+import { render, renderHook, screen, fireEvent, waitFor, act } from '@testing-library/react';
+import {
+  BrowserRouter,
+  MemoryRouter,
+  Route,
+  Routes,
+  useLocation,
+  useParams,
+} from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MediaPlayer } from '../features/player/components/MediaPlayer';
 import {
@@ -17,11 +24,14 @@ import { ResumeOverlay } from '../features/player/components/ResumeOverlay';
 import { NextEpisodeOverlay } from '../features/player/components/NextEpisodeOverlay';
 import { PlayerError } from '../features/player/components/PlayerError';
 import { SubtitleMenu } from '../features/player/components/SubtitleMenu';
+import { useActiveMedia } from '../features/player/hooks/useActiveMedia';
+import { usePlayerStore } from '../features/player/stores/usePlayerStore';
 import type { MediaItemType } from '../types/media';
 import { findActiveSubtitleCue, parseWebVttCues } from '../features/player/utils/subtitleCues';
 
 describe('Player Components Unit Tests', () => {
   const hlsSessionId = '00000000-0000-4000-8000-000000000000';
+  let previousAutoPlayNext = true;
 
   it('aligns absolute subtitle cues with a restarted Safari HLS timeline', () => {
     expect(alignSubtitleCueToPlaybackTimeline(2030.5, 2033, 2028, 0)).toEqual({
@@ -174,10 +184,12 @@ Sonraki cümle`);
   });
 
   beforeEach(() => {
+    previousAutoPlayNext = usePlayerStore.getState().autoPlayNext;
     vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(hlsSessionId);
   });
 
   afterEach(() => {
+    usePlayerStore.setState({ autoPlayNext: previousAutoPlayNext });
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
@@ -228,6 +240,133 @@ Sonraki cümle`);
     },
   };
 
+  it('prefers episode playback settings and inherits series values only when blank', () => {
+    const seriesWithPlaybackSettings: MediaItemType = {
+      ...mockSeries,
+      startAtSeconds: 88,
+      completeAtSeconds: 1305,
+      series: {
+        ...mockSeries.series!,
+        seasons: mockSeries.series!.seasons.map((season) => ({
+          ...season,
+          episodes: season.episodes.map((episode) =>
+            episode.id === 'episode_1'
+              ? { ...episode, startAtSeconds: 125, completeAtSeconds: 1260 }
+              : { ...episode, startAtSeconds: 0, completeAtSeconds: null },
+          ),
+        })),
+      },
+    };
+
+    const { result, rerender } = renderHook(
+      ({ selectedEpisodeId }) => useActiveMedia(seriesWithPlaybackSettings, selectedEpisodeId),
+      { initialProps: { selectedEpisodeId: 'episode_1' } },
+    );
+
+    expect(result.current.startAtSeconds).toBe(125);
+    expect(result.current.completeAtSeconds).toBe(1260);
+
+    rerender({ selectedEpisodeId: 'episode_2' });
+    expect(result.current.startAtSeconds).toBe(0);
+    expect(result.current.completeAtSeconds).toBe(1305);
+  });
+
+  it('skips the intro once, opens next episode at the configured completion point, then advances', async () => {
+    vi.useFakeTimers();
+    queryClient.clear();
+    usePlayerStore.setState({ autoPlayNext: true });
+
+    let uuidCounter = 0;
+    vi.spyOn(globalThis.crypto, 'randomUUID').mockImplementation(
+      () => `00000000-0000-4000-8000-${String(++uuidCounter).padStart(12, '0')}`,
+    );
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          progress: { updatedAt: '2026-10-30T00:00:00.000Z', serverRevision: 1 },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    const seriesWithPlaybackSettings: MediaItemType = {
+      ...mockSeries,
+      startAtSeconds: 88,
+      completeAtSeconds: 1305,
+      series: {
+        ...mockSeries.series!,
+        seasons: mockSeries.series!.seasons.map((season) => ({
+          ...season,
+          episodes: season.episodes.map((episode) => ({
+            ...episode,
+            technicalMetadata: { mediaDuration: 1380, mediaHeight: 1080 },
+          })),
+        })),
+      },
+    };
+
+    const LocationProbe = () => <output data-testid="current-path">{useLocation().pathname}</output>;
+    const PlayerRoute = () => {
+      const { episodeId: selectedEpisodeId } = useParams();
+      return (
+        <>
+          <LocationProbe />
+          <MediaPlayer media={seriesWithPlaybackSettings} episodeId={selectedEpisodeId} />
+        </>
+      );
+    };
+
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={['/watch/media_series_test/episode_1']}>
+          <Routes>
+            <Route path="/watch/:mediaId/:episodeId" element={<PlayerRoute />} />
+          </Routes>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    const video = container.querySelector('video')!;
+    const playSpy = vi.spyOn(video, 'play').mockResolvedValue();
+    vi.spyOn(video, 'pause').mockImplementation(() => {});
+    Object.defineProperty(video, 'currentTime', {
+      configurable: true,
+      writable: true,
+      value: 0,
+    });
+
+    fireEvent.loadedMetadata(video);
+    act(() => vi.advanceTimersByTime(400));
+    act(() => vi.advanceTimersByTime(0));
+    expect(video.getAttribute('src')).toContain('&start=88&');
+    expect(playSpy).toHaveBeenCalled();
+
+    const sourceAfterIntroSkip = video.getAttribute('src');
+    fireEvent.loadedMetadata(video);
+    act(() => vi.advanceTimersByTime(500));
+    expect(video.getAttribute('src')).toBe(sourceAfterIntroSkip);
+
+    video.currentTime = 1217;
+    fireEvent.timeUpdate(video);
+    expect(screen.getByText(/Hemen Oynat \(5s\)/)).toBeInTheDocument();
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    for (let elapsed = 1; elapsed <= 4; elapsed += 1) {
+      act(() => vi.advanceTimersByTime(1000));
+      expect(screen.getByText(new RegExp(`Hemen Oynat \\(${5 - elapsed}s\\)`))).toBeInTheDocument();
+      video.currentTime = 1217 + elapsed;
+      fireEvent.timeUpdate(video);
+    }
+
+    act(() => vi.advanceTimersByTime(1000));
+    expect(screen.getByTestId('current-path')).toHaveTextContent(
+      '/watch/media_series_test/episode_2',
+    );
+  });
+
   it('renders ResumeOverlay with position time and handles choice', () => {
     const onResume = vi.fn();
     const onRestart = vi.fn();
@@ -259,6 +398,28 @@ Sonraki cümle`);
     expect(screen.getByText(/hemen oynat/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByText(/hemen oynat/i));
+    expect(onPlayNext).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the next episode countdown running when the parent recreates its callback', () => {
+    vi.useFakeTimers();
+    const onPlayNext = vi.fn();
+    const renderOverlay = () => (
+      <NextEpisodeOverlay
+        nextEpisodeTitle="The Narrow Way"
+        seasonNumber={1}
+        episodeNumber={2}
+        onPlayNext={() => onPlayNext()}
+        onCancel={() => {}}
+      />
+    );
+    const { rerender } = render(renderOverlay());
+
+    for (let tick = 0; tick < 10; tick += 1) {
+      act(() => vi.advanceTimersByTime(500));
+      rerender(renderOverlay());
+    }
+
     expect(onPlayNext).toHaveBeenCalledTimes(1);
   });
 

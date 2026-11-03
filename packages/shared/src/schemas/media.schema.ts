@@ -44,6 +44,66 @@ export const updateMediaMetadataSchema = z.object({
 
 export type UpdateMediaMetadataInput = z.infer<typeof updateMediaMetadataSchema>;
 
+export const updateSeriesNoteSchema = z.object({
+  note: z.string().max(10000),
+});
+
+export type UpdateSeriesNoteInput = z.infer<typeof updateSeriesNoteSchema>;
+
+const openingSkipSecondsSchema = z.number().int().min(0).max(360000).nullable();
+const completionThresholdSecondsSchema = z.number().int().min(1).max(360000).nullable();
+
+export const MAX_PLAYBACK_SKIP_BREAKPOINTS = 20;
+
+export const playbackSkipBreakpointSchema = z.object({
+  triggerSeconds: z.number().int().min(1).max(360000),
+  targetSeconds: z.number().int().min(1).max(360000),
+});
+
+export type PlaybackSkipBreakpoint = z.infer<typeof playbackSkipBreakpointSchema>;
+
+export const playbackSkipBreakpointsSchema = z
+  .array(playbackSkipBreakpointSchema)
+  .max(MAX_PLAYBACK_SKIP_BREAKPOINTS)
+  .superRefine((breakpoints, context) => {
+    const orderedBreakpoints = breakpoints
+      .map((breakpoint, originalIndex) => ({ breakpoint, originalIndex }))
+      .sort((left, right) => left.breakpoint.triggerSeconds - right.breakpoint.triggerSeconds);
+
+    orderedBreakpoints.forEach(({ breakpoint, originalIndex }, index) => {
+      if (breakpoint.targetSeconds <= breakpoint.triggerSeconds) {
+        context.addIssue({
+          code: 'custom',
+          message: 'The target must be later than the trigger.',
+          path: [originalIndex, 'targetSeconds'],
+        });
+      }
+
+      const previous = orderedBreakpoints[index - 1]?.breakpoint;
+      if (previous && breakpoint.triggerSeconds <= previous.targetSeconds) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Skip breakpoints must not overlap or chain together.',
+          path: [originalIndex, 'triggerSeconds'],
+        });
+      }
+    });
+  });
+
+export const updateSeriesPlaybackSettingsSchema = z.object({
+  startAtSeconds: openingSkipSecondsSchema,
+  completeAtSeconds: completionThresholdSecondsSchema,
+  skipBreakpoints: playbackSkipBreakpointsSchema.optional(),
+});
+
+export type UpdateSeriesPlaybackSettingsInput = z.infer<typeof updateSeriesPlaybackSettingsSchema>;
+
+export const updateEpisodePlaybackSettingsSchema = updateSeriesPlaybackSettingsSchema.extend({
+  skipBreakpoints: playbackSkipBreakpointsSchema.nullable().optional(),
+});
+
+export type UpdateEpisodePlaybackSettingsInput = z.infer<typeof updateEpisodePlaybackSettingsSchema>;
+
 export const batchDeleteMediaSchema = z.object({
   ids: z.array(z.string()).min(1, 'En az 1 içerik seçilmelidir.'),
 });

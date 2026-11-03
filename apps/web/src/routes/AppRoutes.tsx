@@ -175,15 +175,7 @@ export const AppRoutes: React.FC = () => {
 
         {/* Video Player (Full Screen) */}
         <Route
-          path="/watch/:mediaId"
-          element={
-            <Suspense fallback={<PlayerFallback />}>
-              <WatchPage />
-            </Suspense>
-          }
-        />
-        <Route
-          path="/watch/:mediaId/:episodeId"
+          path="/watch/:mediaId/:episodeId?"
           element={
             <Suspense fallback={<PlayerFallback />}>
               <WatchPage />

@@ -1,3 +1,5 @@
+import type { PlaybackSkipBreakpoint } from '@cinedrive/shared';
+
 export interface SubtitleItemType {
   id: string;
   languageCode: string;
@@ -37,6 +39,10 @@ export interface EpisodeType {
   episodeNumber: number;
   title: string;
   duration?: number;
+  startAtSeconds?: number | null;
+  completeAtSeconds?: number | null;
+  /** null means inherit the series-level skip breakpoints. */
+  skipBreakpoints?: PlaybackSkipBreakpoint[] | null;
   overview?: string;
   stillUrl?: string;
   driveFileId: string;
@@ -66,6 +72,7 @@ export interface MovieType {
 }
 
 export interface PlaybackProgressType {
+  episodeId?: string | null;
   positionSeconds: number;
   durationSeconds: number;
   percentage: number;
@@ -92,12 +99,16 @@ export interface MediaItemType {
   posterUrl?: string;
   backdropUrl?: string;
   duration?: number;
+  startAtSeconds?: number | null;
+  completeAtSeconds?: number | null;
+  skipBreakpoints?: PlaybackSkipBreakpoint[] | null;
   voteAverage?: number;
   voteCount?: number;
   genres?: string[];
   cast?: CastMemberType[];
   trailerUrl?: string;
   contentRating?: string;
+  personalNote?: string | null;
   tmdbId?: number;
   imdbId?: string;
   isFavorite?: boolean;
