@@ -24,7 +24,7 @@ import {
   useValidateDriveScanSourceMutation,
 } from '../../../hooks/useApi';
 import { toast } from '../../../stores/useToastStore';
-import { t } from '../../../i18n';
+import { intlLocale, t } from '../../../i18n';
 import { Modal } from '../../../components/common/Modal';
 import { connectionLabel, useGoogleConnections } from '../useGoogleConnections';
 import {
@@ -57,7 +57,7 @@ type SourceRow = {
 
 const formatDateTime = (value?: string | null) =>
   value
-    ? new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(
+    ? new Intl.DateTimeFormat(intlLocale, { dateStyle: 'short', timeStyle: 'short' }).format(
         new Date(value),
       )
     : t.settings.sourceManager.notScanned;

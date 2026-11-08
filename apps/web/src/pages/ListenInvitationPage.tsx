@@ -34,6 +34,22 @@ const messages = {
     request: 'Ask the sender for a new invitation link.',
     server: 'Server',
   },
+  'pt-BR': {
+    title: 'Você foi convidado para ouvir junto',
+    description: 'Entre em uma fila compartilhada no CineMusic e ouça no seu próprio dispositivo.',
+    open: 'Abrir no CineMusic',
+    copy: 'Copiar código',
+    copied: 'Código copiado',
+    copyFailed: 'Não foi possível copiar. Selecione o código e copie manualmente.',
+    instructions:
+      'Se o aplicativo não abrir, informe este código em CineMusic → Conectar → Ouvir junto.',
+    permission:
+      'Entre neste servidor com sua própria conta. O convite não dá acesso às músicas. O aplicativo verifica se a sessão e o código ainda são válidos quando você entra.',
+    missing: 'Se o CineMusic não estiver instalado, volte a este link depois de instalá-lo.',
+    invalid: 'Este link de convite é inválido.',
+    request: 'Peça a quem enviou o convite um novo link.',
+    server: 'Servidor',
+  },
 };
 
 export function ListenInvitationPage() {

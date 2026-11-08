@@ -27,6 +27,18 @@ const messages = {
     permission:
       'Sign in on the same server. The app checks expiry and asks you to confirm before joining. Private library access is not granted. Opening this page does not join a playlist or start playback.',
   },
+  'pt-BR': {
+    title: 'Criem uma playlist juntos',
+    description: 'Adicione faixas à mesma playlist e ouça de forma independente nos seus dispositivos.',
+    open: 'Abrir no CineMusic',
+    copy: 'Copiar link',
+    copied: 'Link copiado',
+    failed: 'Não foi possível copiar. Copie o link pela barra de endereços do navegador.',
+    invalid: 'Este convite é inválido. Peça um novo link a quem enviou o convite.',
+    help: 'Se o aplicativo não abrir, cole o link em CineMusic → Biblioteca → Playlists → Convites para playlists.',
+    permission:
+      'Entre com sua conta neste mesmo servidor. O aplicativo verifica a validade do convite e pede sua confirmação antes de entrar. O convite não dá acesso a bibliotecas privadas. Abrir esta página não adiciona você à playlist nem inicia a reprodução.',
+  },
 };
 
 export function PlaylistInvitationPage() {

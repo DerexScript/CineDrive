@@ -1,7 +1,7 @@
 import React from 'react';
 import { AlertTriangle, Clock, Files, FolderSync, LibraryBig, RefreshCw } from 'lucide-react';
 import { useDriveScanSourcesQuery, useLibrariesQuery } from '../../../hooks/useApi';
-import { t } from '../../../i18n';
+import { intlLocale, t } from '../../../i18n';
 import { GoogleDriveSection } from './GoogleDriveSection';
 import { LibrarySourceManagerSection } from './LibrarySourceManagerSection';
 import { SetupEntry } from '../../setup/SetupEntry';
@@ -45,7 +45,7 @@ export const LibrarySourcesSection: React.FC = () => {
     )
     .sort((left, right) => new Date(right!).getTime() - new Date(left!).getTime())[0];
   const lastScanLabel = lastScanTimestamp
-    ? new Intl.DateTimeFormat(undefined, { dateStyle: 'short', timeStyle: 'short' }).format(
+    ? new Intl.DateTimeFormat(intlLocale, { dateStyle: 'short', timeStyle: 'short' }).format(
         new Date(lastScanTimestamp),
       )
     : t.settings.librarySources.neverScanned;
