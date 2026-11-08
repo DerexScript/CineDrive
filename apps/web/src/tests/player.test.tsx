@@ -26,7 +26,7 @@ import { PlayerError } from '../features/player/components/PlayerError';
 import { SubtitleMenu } from '../features/player/components/SubtitleMenu';
 import { useActiveMedia } from '../features/player/hooks/useActiveMedia';
 import { usePlayerStore } from '../features/player/stores/usePlayerStore';
-import type { MediaItemType } from '../types/media';
+import type { EpisodeType, MediaItemType } from '../types/media';
 import { findActiveSubtitleCue, parseWebVttCues } from '../features/player/utils/subtitleCues';
 
 describe('Player Components Unit Tests', () => {
@@ -240,6 +240,22 @@ Sonraki cümle`);
     },
   };
 
+  const withFirstEpisode = (overrides: Partial<EpisodeType>): MediaItemType => ({
+    ...mockSeries,
+    series: {
+      ...mockSeries.series!,
+      seasons: [
+        {
+          ...mockSeries.series!.seasons[0]!,
+          episodes: [
+            { ...mockSeries.series!.seasons[0]!.episodes[0]!, ...overrides },
+            mockSeries.series!.seasons[0]!.episodes[1]!,
+          ],
+        },
+      ],
+    },
+  });
+
   it('prefers episode playback settings and inherits series values only when blank', () => {
     const seriesWithPlaybackSettings: MediaItemType = {
       ...mockSeries,
@@ -269,6 +285,55 @@ Sonraki cümle`);
     rerender({ selectedEpisodeId: 'episode_2' });
     expect(result.current.startAtSeconds).toBe(0);
     expect(result.current.completeAtSeconds).toBe(1305);
+  });
+
+  it('uses the episode duration when technical analysis has no duration', () => {
+    const seriesWithUnanalyzedEpisode = withFirstEpisode({
+      duration: 3831.083,
+      technicalMetadata: { mediaAnalysisError: 'PROBE_FAILED' },
+    });
+
+    const { result } = renderHook(() => useActiveMedia(seriesWithUnanalyzedEpisode, 'episode_1'));
+
+    expect(result.current.mediaDuration).toBe(3831.083);
+  });
+
+  it('prefers the analyzed duration when both episode duration values are available', () => {
+    const seriesWithAnalyzedDuration = withFirstEpisode({
+      duration: 3831.083,
+      technicalMetadata: { mediaDuration: 3830.9 },
+    });
+
+    const { result } = renderHook(() => useActiveMedia(seriesWithAnalyzedDuration, 'episode_1'));
+
+    expect(result.current.mediaDuration).toBe(3830.9);
+  });
+
+  it('keeps a known episode duration on the timeline when the stream reports a short fragment', () => {
+    const seriesWithUnanalyzedEpisode = withFirstEpisode({
+      duration: 3831.083,
+      technicalMetadata: { mediaAnalysisError: 'PROBE_FAILED' },
+    });
+
+    const { container } = render(
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <MediaPlayer media={seriesWithUnanalyzedEpisode} episodeId="episode_1" />
+        </BrowserRouter>
+      </QueryClientProvider>,
+    );
+
+    const timeline = container.querySelector('[role="slider"]');
+    expect(timeline).toHaveAttribute('aria-valuetext', '0:00 / 63:51');
+
+    const video = container.querySelector('video')!;
+    vi.spyOn(video, 'play').mockResolvedValue();
+    Object.defineProperty(video, 'duration', { configurable: true, value: 2 });
+    Object.defineProperty(video, 'currentTime', { configurable: true, value: 33 });
+    fireEvent.loadedMetadata(video);
+    fireEvent.timeUpdate(video);
+
+    expect(timeline).toHaveAttribute('aria-valuetext', '0:33 / 63:51');
   });
 
   it('skips the intro once, opens next episode at the configured completion point, then advances', async () => {
