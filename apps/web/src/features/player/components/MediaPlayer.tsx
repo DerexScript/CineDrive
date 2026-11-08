@@ -124,7 +124,7 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const [isBuffering, setIsBuffering] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
+  const [duration, setDuration] = useState(active.mediaDuration || 0);
   const [bufferedTime, setBufferedTime] = useState(0);
   const initialPositionKey = JSON.stringify([
     media.id,
@@ -540,8 +540,8 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
     setIsBuffering(false);
     const reportedDuration = video.duration;
     setDuration(
-      active.analyzedDuration && active.analyzedDuration > 0
-        ? active.analyzedDuration
+      active.mediaDuration && active.mediaDuration > 0
+        ? active.mediaDuration
         : Number.isFinite(reportedDuration) && reportedDuration > 0
           ? reportedDuration
           : 0,
@@ -583,7 +583,7 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
       !resumePromptHandledRef.current &&
       !active.progress?.completed &&
       savedPosition > Math.max(15, configuredStart) &&
-      savedPosition < (active.analyzedDuration || video.duration) - 30;
+      savedPosition < (active.mediaDuration || video.duration) - 30;
     resumePromptHandledRef.current = true;
 
     if (shouldOfferResume) {
@@ -591,7 +591,7 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
       setShowResumeModal(true);
     } else if (
       configuredStart > savedPosition &&
-      configuredStart < (active.analyzedDuration || video.duration)
+      configuredStart < (active.mediaDuration || video.duration)
     ) {
       setSkipBreakpointPosition(configuredStart, configuredStart);
       seekToAbsoluteTime(configuredStart, true, source.playbackMode !== 'direct');
@@ -684,7 +684,7 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
       setBufferedTime(video.buffered.end(video.buffered.length - 1) + timelineOffset);
     }
 
-    const reportedDuration = active.analyzedDuration || video.duration;
+    const reportedDuration = active.mediaDuration || video.duration;
     if (!Number.isFinite(reportedDuration) || reportedDuration <= 0) return;
 
     const completionAt =
@@ -954,7 +954,7 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
 
   const handleVideoEnded = () => {
     const video = videoRef.current;
-    const reportedDuration = active.analyzedDuration || duration || video?.duration || 0;
+    const reportedDuration = active.mediaDuration || duration || video?.duration || 0;
     const playbackPosition = (video?.currentTime || 0) + timelineOffset;
 
     const completionAt =

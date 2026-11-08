@@ -19,7 +19,7 @@ export interface ActiveMedia {
   seasonNumber?: number;
   episodeNumber?: number;
   playbackPlan?: PlaybackPlanType;
-  analyzedDuration?: number;
+  mediaDuration?: number;
   analyzedHeight?: number;
   startAtSeconds: number;
   completeAtSeconds: number | null;
@@ -28,6 +28,15 @@ export interface ActiveMedia {
   progress: PlaybackProgressType | null;
   subtitles: SubtitleItemType[];
 }
+
+const isPositiveFiniteDuration = (duration: number | null | undefined): duration is number =>
+  typeof duration === 'number' && Number.isFinite(duration) && duration > 0;
+
+const resolveEpisodeDuration = (episode: EpisodeType): number | undefined => {
+  const analyzedDuration = episode.technicalMetadata?.mediaDuration;
+  if (isPositiveFiniteDuration(analyzedDuration)) return analyzedDuration;
+  return isPositiveFiniteDuration(episode.duration) ? episode.duration : undefined;
+};
 
 const formatEpisodeTitle = (mediaTitle: string, episode: EpisodeType) => {
   const paddedEpisode =
@@ -64,7 +73,7 @@ export const useActiveMedia = (media: MediaItemType, episodeId?: string): Active
         ...base,
         driveFileId: media.movie.driveFileId,
         playbackPlan: media.movie.playbackPlan,
-        analyzedDuration: media.movie.technicalMetadata?.mediaDuration,
+        mediaDuration: media.movie.technicalMetadata?.mediaDuration,
         analyzedHeight: media.movie.technicalMetadata?.mediaHeight,
       };
     }
@@ -102,7 +111,7 @@ export const useActiveMedia = (media: MediaItemType, episodeId?: string): Active
       seasonNumber: episode.seasonNumber,
       episodeNumber: episode.episodeNumber,
       playbackPlan: episode.playbackPlan,
-      analyzedDuration: episode.technicalMetadata?.mediaDuration,
+      mediaDuration: resolveEpisodeDuration(episode),
       analyzedHeight: episode.technicalMetadata?.mediaHeight,
       progress:
         episode.playbackProgresses?.[0] ||
