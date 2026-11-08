@@ -1,11 +1,12 @@
 import { tr, type Translations } from './tr';
 import { en } from './en';
+import { ptBR } from './ptBR';
 
 export type { Translations };
 
-export type Locale = 'tr' | 'en';
+export type Locale = 'tr' | 'en' | 'pt-BR';
 
-const DICTIONARIES: Record<Locale, Translations> = { tr, en };
+const DICTIONARIES: Record<Locale, Translations> = { tr, en, 'pt-BR': ptBR };
 
 export const LOCALES = Object.keys(DICTIONARIES) as Locale[];
 
@@ -27,7 +28,7 @@ export const getStoredLocale = (): Locale => {
 };
 
 export const locale: Locale = getStoredLocale();
-export const intlLocale = locale === 'tr' ? 'tr-TR' : 'en-US';
+export const intlLocale = locale === 'tr' ? 'tr-TR' : locale === 'pt-BR' ? 'pt-BR' : 'en-US';
 
 if (typeof document !== 'undefined') {
   document.documentElement.lang = locale;

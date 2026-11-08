@@ -143,4 +143,76 @@ const en: typeof tr = {
   resume: 'Resume a saved source',
   resumeHint: 'Return to scanning an existing source without creating another one.',
 };
-export const copy = locale === 'en' ? en : tr;
+const ptBR: typeof tr = {
+  title: 'Configure sua primeira biblioteca',
+  subtitle: 'Conecte uma origem, verifique o acesso e inicie sua primeira varredura.',
+  source: 'Escolher origem',
+  details: 'Verificar acesso',
+  review: 'Criar origem',
+  scan: 'Primeira varredura',
+  local: 'Pasta local',
+  localHint: 'Um disco conectado ao servidor ou uma pasta de mídia montada no Docker.',
+  drive: 'Google Drive',
+  driveHint: 'Uma pasta de uma conta Google conectada. Os arquivos continuam no Drive.',
+  next: 'Continuar',
+  back: 'Voltar',
+  later: 'Fazer isso depois',
+  settings: 'Voltar às configurações da origem',
+  name: 'Nome da biblioteca',
+  path: 'Caminho da pasta no servidor',
+  folder: 'ID da pasta do Drive',
+  driveScope: 'Escopo da varredura',
+  specificFolder: 'Varrer uma pasta específica',
+  specificFolderHint: 'Indexa mídias apenas na pasta selecionada e nas subpastas.',
+  entireDrive: 'Varrer todo o Google Drive',
+  entireDriveHint:
+    'Indexa todos os arquivos de mídia acessíveis na conta. Em contas grandes, a primeira varredura pode demorar.',
+  entireDriveReview:
+    'Todas as mídias acessíveis no Drive serão verificadas. A varredura pode demorar; nenhum arquivo será movido ou excluído.',
+  account: 'Conta Google',
+  pathHint:
+    'Use o caminho absoluto visível para o servidor, não o caminho do seu computador. No Docker, monte a pasta de mídia como somente leitura (por exemplo, /media/films).',
+  folderHint:
+    'Informe o ID que aparece depois de /folders/ no link da pasta do Drive. Este assistente adiciona somente a pasta selecionada.',
+  connect: 'Conectar uma conta Google',
+  connectHint:
+    'A conexão será aberta em uma nova aba. Quando terminar, volte aqui e atualize a lista de contas.',
+  refresh: 'Tentar novamente',
+  refreshAccounts: 'Atualizar contas',
+  select: 'Selecionar conta',
+  verify: 'Verificar acesso',
+  verified: 'Acesso verificado',
+  shallow:
+    'Esta verificação confirma o acesso à pasta. Os arquivos de mídia serão analisados na primeira varredura; ainda podem ocorrer erros de acesso em subpastas.',
+  create: 'Criar origem',
+  creating: 'Criando…',
+  busy: 'Verificando…',
+  createHint:
+    'A varredura ainda não será iniciada. Você poderá iniciá-la separadamente depois de criar a origem.',
+  start: 'Iniciar varredura',
+  retry: 'Varrer novamente',
+  running: 'Varredura em andamento',
+  completed: 'Varredura concluída',
+  failed: 'A varredura não foi concluída',
+  waiting: 'Origem pronta',
+  waitHint: 'A primeira varredura ainda não começou. Você pode continuar mais tarde pelo link desta página.',
+  progressHint:
+    'A varredura continua no servidor; você pode sair desta página. Os arquivos não são excluídos nem movidos.',
+  counts: (added, updated, errors) => `${added} adicionados · ${updated} atualizados · ${errors} erros`,
+  empty:
+    'Nenhuma mídia nova foi encontrada. Confira o conteúdo da pasta, os formatos de arquivo compatíveis e as permissões de acesso.',
+  warnings:
+    'Não foi possível processar alguns arquivos. Consulte o histórico de varreduras nas configurações da origem para ver os detalhes.',
+  browse: 'Abrir biblioteca',
+  music: 'Abrir músicas',
+  loadError: 'Não foi possível carregar os dados de configuração.',
+  accessError: 'Não foi possível verificar o acesso. Confira o caminho da pasta ou a conexão com o Google.',
+  createError:
+    'Não foi possível criar a origem. Antes de tentar novamente, confira nas configurações se ela já foi criada.',
+  scanError: 'Não foi possível iniciar a varredura. A origem foi salva e você pode tentar novamente.',
+  admin: 'Entre com uma conta de administrador para configurar as origens.',
+  missing: 'Esta origem não foi encontrada ou você não tem permissão para acessá-la.',
+  resume: 'Continuar de uma origem salva',
+  resumeHint: 'Retome a varredura de uma origem existente sem criar outra.',
+};
+export const copy = locale === 'en' ? en : locale === 'pt-BR' ? ptBR : tr;
