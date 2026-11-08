@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { parseApiError } from '../api/client';
+import { hasSpecificApiErrorMessage, parseApiError } from '../api/client';
 import { t } from '../i18n';
 
 export type ToastVariant = 'success' | 'error' | 'info';
@@ -67,11 +67,15 @@ export const toast = {
     useToastStore.getState().push({ variant: 'error', message, detail }),
   /** Turns an API/network failure into an error toast. */
   fromError: (error: unknown, fallbackMessage?: string) => {
-    const { message, requestId } = parseApiError(error);
+    const parsed = parseApiError(error);
+    const message =
+      fallbackMessage && !hasSpecificApiErrorMessage(parsed.code, parsed.status)
+        ? fallbackMessage
+        : parsed.message;
     return useToastStore.getState().push({
       variant: 'error',
       message: message || fallbackMessage || t.errors.unexpected,
-      detail: requestId ? t.common.requestId(requestId) : undefined,
+      detail: parsed.requestId ? t.common.requestId(parsed.requestId) : undefined,
     });
   },
 };

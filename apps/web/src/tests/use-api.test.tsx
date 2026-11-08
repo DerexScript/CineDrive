@@ -16,6 +16,7 @@ import {
   useAutoDownloadSubtitleMutation,
 } from '../hooks/useApi';
 import { useUiStore } from '../stores/useUiStore';
+import { t } from '../i18n';
 import { createTestQueryClient } from './helpers/renderWithProviders';
 import type { MediaItemType } from '../types/media';
 
@@ -335,7 +336,7 @@ describe('useLoginMutation', () => {
     queryClient.clear();
   });
 
-  it('preserves the structured API error for the login page', async () => {
+  it('preserves the structured API error while localizing its message for the login page', async () => {
     const queryClient = createTestQueryClient();
     const wrapper = ({ children }: { children: React.ReactNode }) => (
       <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
@@ -361,7 +362,8 @@ describe('useLoginMutation', () => {
     expect(parseApiError(result.current.error)).toMatchObject({
       status: 503,
       code: 'DATABASE_BUSY',
-      message: 'Veritabanı geçici olarak meşgul.',
+      message: t.errors.api.server,
+      requestId: 'request-1',
     });
   });
 });

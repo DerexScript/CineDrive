@@ -3,6 +3,7 @@ import { render, screen, act } from '@testing-library/react';
 import { ApiRequestError, parseApiError } from '../api/client';
 import { ToastViewport } from '../components/common/ToastViewport';
 import { toast, useToastStore } from '../stores/useToastStore';
+import { t } from '../i18n';
 
 describe('Toast system', () => {
   beforeEach(() => {
@@ -60,7 +61,7 @@ describe('Toast system', () => {
     expect(screen.queryByText('Bir şeyler ters gitti')).not.toBeInTheDocument();
   });
 
-  it('turns an API error into a readable message with its request id', () => {
+  it('localizes API errors instead of showing the server message and keeps its request id', () => {
     render(<ToastViewport />);
     act(() => {
       toast.fromError(
@@ -72,8 +73,27 @@ describe('Toast system', () => {
       );
     });
 
-    expect(screen.getByText('Medya bulunamadı.')).toBeInTheDocument();
+    expect(screen.getByText(t.errors.api.notFound)).toBeInTheDocument();
+    expect(screen.queryByText('Medya bulunamadı.')).not.toBeInTheDocument();
     expect(screen.getByText('İstek No: req_1')).toBeInTheDocument();
+  });
+
+  it('uses a localized fallback for internal errors and keeps the request id', () => {
+    render(<ToastViewport />);
+    act(() => {
+      toast.fromError(
+        new ApiRequestError(
+          500,
+          { error: { code: 'INTERNAL_SERVER_ERROR', message: 'Sunucu hatası', requestId: 'req_internal' } },
+          'Sunucu hatası',
+        ),
+        'A gravação não pôde ser salva.',
+      );
+    });
+
+    expect(screen.getByText('A gravação não pôde ser salva.')).toBeInTheDocument();
+    expect(screen.queryByText('Sunucu hatası')).not.toBeInTheDocument();
+    expect(screen.getByText(t.common.requestId('req_internal'))).toBeInTheDocument();
   });
 
   it('preserves an already-normalized scan conflict instead of showing an unknown error', () => {
@@ -98,13 +118,17 @@ describe('Toast system', () => {
     expect(screen.getByText('İstek No: scan-conflict')).toBeInTheDocument();
   });
 
-  it.each([0, 401, 403, 500, 503])(
-    'keeps normalized status %s and optional request ID',
-    (status) => {
+  it.each([
+    [0, t.errors.networkError],
+    [401, t.errors.api.unauthenticated],
+    [403, t.errors.api.forbidden],
+    [500, t.errors.api.server],
+    [503, t.errors.api.server],
+  ])('localizes an unknown API error with HTTP status %s', (status, message) => {
       const error = { code: 'FAILURE', message: 'Readable failure', status };
-      expect(parseApiError(error)).toEqual(error);
-    },
-  );
+      expect(parseApiError(error)).toMatchObject({ code: 'FAILURE', message, status });
+      expect(parseApiError(error).message).not.toBe('Readable failure');
+    });
 
   it.each([
     { code: '', message: 'x', status: 409 },
