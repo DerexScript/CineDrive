@@ -248,6 +248,7 @@ model MediaItem {
   imdbId              String?
   startAtSeconds      Int?
   completeAtSeconds   Int?
+  completeBeforeEndSeconds Int?
   skipBreakpointsJson String?
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
@@ -352,6 +353,7 @@ model Episode {
   duration           Float?
   startAtSeconds     Int?
   completeAtSeconds  Int?
+  completeBeforeEndSeconds Int?
   skipBreakpointsJson String?
   overview           String?
   stillUrl           String?

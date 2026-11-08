@@ -256,6 +256,7 @@ export const mediaEditRoutes: FastifyPluginAsync = async (fastify) => {
     Body: {
       startAtSeconds: number | null;
       completeAtSeconds: number | null;
+      completeBeforeEndSeconds?: number | null;
       skipBreakpoints?: PlaybackSkipBreakpoint[];
     };
   }>('/:id/playback-settings', async (request, reply) => {
@@ -285,6 +286,7 @@ export const mediaEditRoutes: FastifyPluginAsync = async (fastify) => {
         data: {
           startAtSeconds: parsed.data.startAtSeconds,
           completeAtSeconds: parsed.data.completeAtSeconds,
+          completeBeforeEndSeconds: parsed.data.completeBeforeEndSeconds ?? null,
           ...(skipBreakpoints !== undefined
             ? { skipBreakpointsJson: JSON.stringify(skipBreakpoints) }
             : {}),
@@ -297,6 +299,7 @@ export const mediaEditRoutes: FastifyPluginAsync = async (fastify) => {
           id: true,
           startAtSeconds: true,
           completeAtSeconds: true,
+          completeBeforeEndSeconds: true,
           skipBreakpointsJson: true,
         },
       });
@@ -316,6 +319,7 @@ export const mediaEditRoutes: FastifyPluginAsync = async (fastify) => {
         id: mediaItem.id,
         startAtSeconds: mediaItem.startAtSeconds,
         completeAtSeconds: mediaItem.completeAtSeconds,
+        completeBeforeEndSeconds: mediaItem.completeBeforeEndSeconds,
         skipBreakpoints:
           skipBreakpoints ?? decodeSkipBreakpoints(mediaItem.skipBreakpointsJson) ?? [],
       },
@@ -327,6 +331,7 @@ export const mediaEditRoutes: FastifyPluginAsync = async (fastify) => {
     Body: {
       startAtSeconds: number | null;
       completeAtSeconds: number | null;
+      completeBeforeEndSeconds?: number | null;
       skipBreakpoints?: PlaybackSkipBreakpoint[] | null;
     };
   }>('/:id/episodes/:episodeId/playback-settings', async (request, reply) => {
@@ -363,6 +368,7 @@ export const mediaEditRoutes: FastifyPluginAsync = async (fastify) => {
         data: {
           startAtSeconds: parsed.data.startAtSeconds,
           completeAtSeconds: parsed.data.completeAtSeconds,
+          completeBeforeEndSeconds: parsed.data.completeBeforeEndSeconds ?? null,
           ...(skipBreakpoints !== undefined
             ? {
                 skipBreakpointsJson:
@@ -378,6 +384,7 @@ export const mediaEditRoutes: FastifyPluginAsync = async (fastify) => {
           id: true,
           startAtSeconds: true,
           completeAtSeconds: true,
+          completeBeforeEndSeconds: true,
           skipBreakpointsJson: true,
         },
       });
@@ -397,6 +404,7 @@ export const mediaEditRoutes: FastifyPluginAsync = async (fastify) => {
         id: episode.id,
         startAtSeconds: episode.startAtSeconds,
         completeAtSeconds: episode.completeAtSeconds,
+        completeBeforeEndSeconds: episode.completeBeforeEndSeconds,
         skipBreakpoints:
           skipBreakpoints === undefined
             ? decodeSkipBreakpoints(episode.skipBreakpointsJson)

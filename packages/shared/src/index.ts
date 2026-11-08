@@ -12,4 +12,5 @@ export * from './schemas/music-studio.schema';
 export * from './types';
 export * from './constants';
 export * from './utils/html-text';
+export * from './utils/series-completion';
 export { normalizeSubtitleStem, parseMediaFilename, parseSubtitleFilename, convertSrtToVtt };

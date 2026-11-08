@@ -344,15 +344,17 @@ export const MediaDetailPage: React.FC = () => {
 
       {media.type === 'series' && (
         <SeriesPlaybackSettings
+          key={media.id}
           mediaId={media.id}
           startAtSeconds={media.startAtSeconds}
           completeAtSeconds={media.completeAtSeconds}
+          completeBeforeEndSeconds={media.completeBeforeEndSeconds}
           skipBreakpoints={media.skipBreakpoints}
         />
       )}
 
       {media.type === 'series' && (
-        <SeriesNotes mediaId={media.id} personalNote={media.personalNote} />
+        <SeriesNotes key={media.id} mediaId={media.id} personalNote={media.personalNote} />
       )}
 
       {/* Cast Members Section ("Oyuncu Kadrosu") */}
@@ -513,6 +515,7 @@ export const MediaDetailPage: React.FC = () => {
                       )}
                     </Link>
                     <EpisodePlaybackSettings
+                      key={episode.id}
                       mediaId={media.id}
                       episode={episode}
                       seriesSkipBreakpoints={media.skipBreakpoints}

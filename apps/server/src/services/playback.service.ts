@@ -1,6 +1,8 @@
 import type { PrismaClient, Prisma } from '@cinedrive/prisma';
 import {
   DEFAULT_SERIES_COMPLETION_THRESHOLD_PERCENT,
+  resolveSeriesCompletionAtSeconds,
+  resolveSeriesCompletionSettings,
   type UpdateProgressInput,
 } from '@cinedrive/shared';
 import { ownedMediaFilter } from '../utils/library-access.js';
@@ -80,20 +82,24 @@ export class PlaybackService {
           ? DEFAULT_SERIES_COMPLETION_THRESHOLD_PERCENT
           : DEFAULT_COMPLETION_THRESHOLD_PERCENT;
 
-      let episode: { completeAtSeconds: number | null } | null = null;
+      let episode: {
+        completeAtSeconds: number | null;
+        completeBeforeEndSeconds: number | null;
+      } | null = null;
       if (episodeId) {
         episode = await tx.episode.findFirst({
           where: { id: episodeId, mediaItemId },
-          select: { completeAtSeconds: true },
+          select: { completeAtSeconds: true, completeBeforeEndSeconds: true },
         });
         if (!episode) throw new Error('INVALID_EPISODE');
       }
 
-      const customCompletionSeconds = episode
-        ? (episode.completeAtSeconds ?? mediaItem.completeAtSeconds)
+      const completionSettings =
+        mediaItem.type === 'series' ? resolveSeriesCompletionSettings(episode, mediaItem) : null;
+      const customCompletionSeconds = completionSettings
+        ? resolveSeriesCompletionAtSeconds(durationSeconds, completionSettings)
         : null;
-      const hasUsableCustomThreshold =
-        customCompletionSeconds !== null && customCompletionSeconds <= durationSeconds;
+      const hasUsableCustomThreshold = customCompletionSeconds !== null;
       const isCompleted = hasUsableCustomThreshold
         ? positionSeconds >= customCompletionSeconds
         : percentage >= defaultCompletionThresholdPercent;

@@ -52,6 +52,7 @@ export type UpdateSeriesNoteInput = z.infer<typeof updateSeriesNoteSchema>;
 
 const openingSkipSecondsSchema = z.number().int().min(0).max(360000).nullable();
 const completionThresholdSecondsSchema = z.number().int().min(1).max(360000).nullable();
+const completionBeforeEndSecondsSchema = completionThresholdSecondsSchema.optional();
 
 export const MAX_PLAYBACK_SKIP_BREAKPOINTS = 20;
 
@@ -90,19 +91,39 @@ export const playbackSkipBreakpointsSchema = z
     });
   });
 
-export const updateSeriesPlaybackSettingsSchema = z.object({
+const playbackSettingsFields = z.object({
   startAtSeconds: openingSkipSecondsSchema,
   completeAtSeconds: completionThresholdSecondsSchema,
+  completeBeforeEndSeconds: completionBeforeEndSecondsSchema,
   skipBreakpoints: playbackSkipBreakpointsSchema.optional(),
 });
 
+const rejectConflictingCompletionRules = (
+  settings: { completeAtSeconds: number | null; completeBeforeEndSeconds?: number | null },
+  context: z.RefinementCtx,
+) => {
+  if (settings.completeAtSeconds !== null && settings.completeBeforeEndSeconds != null) {
+    context.addIssue({
+      code: 'custom',
+      path: ['completeBeforeEndSeconds'],
+      message: 'Choose either a fixed completion time or a time remaining before the end.',
+    });
+  }
+};
+
+export const updateSeriesPlaybackSettingsSchema = playbackSettingsFields.superRefine(
+  rejectConflictingCompletionRules,
+);
+
 export type UpdateSeriesPlaybackSettingsInput = z.infer<typeof updateSeriesPlaybackSettingsSchema>;
 
-export const updateEpisodePlaybackSettingsSchema = updateSeriesPlaybackSettingsSchema.extend({
-  skipBreakpoints: playbackSkipBreakpointsSchema.nullable().optional(),
-});
+export const updateEpisodePlaybackSettingsSchema = playbackSettingsFields
+  .extend({ skipBreakpoints: playbackSkipBreakpointsSchema.nullable().optional() })
+  .superRefine(rejectConflictingCompletionRules);
 
-export type UpdateEpisodePlaybackSettingsInput = z.infer<typeof updateEpisodePlaybackSettingsSchema>;
+export type UpdateEpisodePlaybackSettingsInput = z.infer<
+  typeof updateEpisodePlaybackSettingsSchema
+>;
 
 export const batchDeleteMediaSchema = z.object({
   ids: z.array(z.string()).min(1, 'En az 1 içerik seçilmelidir.'),

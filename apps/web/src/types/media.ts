@@ -41,6 +41,7 @@ export interface EpisodeType {
   duration?: number;
   startAtSeconds?: number | null;
   completeAtSeconds?: number | null;
+  completeBeforeEndSeconds?: number | null;
   /** null means inherit the series-level skip breakpoints. */
   skipBreakpoints?: PlaybackSkipBreakpoint[] | null;
   overview?: string;
@@ -101,6 +102,7 @@ export interface MediaItemType {
   duration?: number;
   startAtSeconds?: number | null;
   completeAtSeconds?: number | null;
+  completeBeforeEndSeconds?: number | null;
   skipBreakpoints?: PlaybackSkipBreakpoint[] | null;
   voteAverage?: number;
   voteCount?: number;

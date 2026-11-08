@@ -1,4 +1,5 @@
-import React, { useEffect, useState, type FormEvent } from 'react';
+import React, { useState, type FormEvent } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { useUpdateSeriesNoteMutation } from '../../hooks/useApi';
 import { toast } from '../../stores/useToastStore';
 import { t } from '../../i18n';
@@ -15,10 +16,6 @@ export const SeriesNotes: React.FC<SeriesNotesProps> = ({ mediaId, personalNote 
   const savedNote = personalNote ?? '';
   const [note, setNote] = useState(savedNote);
 
-  useEffect(() => {
-    setNote(savedNote);
-  }, [mediaId, savedNote]);
-
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
 
@@ -34,14 +31,20 @@ export const SeriesNotes: React.FC<SeriesNotesProps> = ({ mediaId, personalNote 
   const descriptionId = `series-note-description-${mediaId}`;
 
   return (
-    <section className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-5 md:p-6">
-      <div className="mb-5">
-        <h2 className="text-lg font-semibold text-white">{t.mediaDetail.seriesNotes.title}</h2>
-        <p id={descriptionId} className="mt-1 text-sm text-zinc-400">
-          {t.mediaDetail.seriesNotes.description}
-        </p>
-      </div>
-      <form onSubmit={handleSubmit} className="space-y-4">
+    <details className="group rounded-2xl border border-zinc-800 bg-zinc-900/50 p-5 md:p-6">
+      <summary className="flex cursor-pointer list-none items-start justify-between gap-4 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 [&::-webkit-details-marker]:hidden">
+        <div>
+          <h2 className="text-lg font-semibold text-white">{t.mediaDetail.seriesNotes.title}</h2>
+          <p id={descriptionId} className="mt-1 text-sm text-zinc-400">
+            {t.mediaDetail.seriesNotes.description}
+          </p>
+        </div>
+        <ChevronDown
+          aria-hidden="true"
+          className="mt-1 h-5 w-5 shrink-0 text-zinc-400 transition-transform group-open:rotate-180"
+        />
+      </summary>
+      <form onSubmit={handleSubmit} className="mt-5 space-y-4">
         <label
           htmlFor={`series-note-${mediaId}`}
           className="block text-sm font-medium text-zinc-200"
@@ -72,6 +75,6 @@ export const SeriesNotes: React.FC<SeriesNotesProps> = ({ mediaId, personalNote 
           </button>
         </div>
       </form>
-    </section>
+    </details>
   );
 };

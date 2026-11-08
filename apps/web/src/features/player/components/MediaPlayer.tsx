@@ -1,5 +1,8 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { DEFAULT_SERIES_COMPLETION_THRESHOLD_PERCENT } from '@cinedrive/shared';
+import {
+  DEFAULT_SERIES_COMPLETION_THRESHOLD_PERCENT,
+  resolveSeriesCompletionAtSeconds,
+} from '@cinedrive/shared';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2, Clock } from 'lucide-react';
 import { PlayerControls } from './PlayerControls';
@@ -675,9 +678,11 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
     const reportedDuration = active.analyzedDuration || video.duration;
     if (!Number.isFinite(reportedDuration) || reportedDuration <= 0) return;
 
-    const completionAt = active.completeAtSeconds;
-    const hasCustomCompletion =
-      completionAt !== null && completionAt > 0 && completionAt <= reportedDuration;
+    const completionAt =
+      media.type === 'series'
+        ? resolveSeriesCompletionAtSeconds(reportedDuration, active)
+        : active.completeAtSeconds;
+    const hasCustomCompletion = completionAt !== null;
     if (hasCustomCompletion && playbackPosition >= completionAt) {
       if (!completionThresholdTriggeredRef.current) {
         completionThresholdTriggeredRef.current = true;
@@ -709,11 +714,7 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
       );
       if (breakpoint) {
         setSkipBreakpointPosition(breakpoint.targetSeconds, breakpoint.targetSeconds);
-        seekToAbsoluteTime(
-          breakpoint.targetSeconds,
-          true,
-          source.playbackMode !== 'direct',
-        );
+        seekToAbsoluteTime(breakpoint.targetSeconds, true, source.playbackMode !== 'direct');
         return;
       }
     }
@@ -947,12 +948,11 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
     const reportedDuration = active.analyzedDuration || duration || video?.duration || 0;
     const playbackPosition = (video?.currentTime || 0) + timelineOffset;
 
-    const completionAt = active.completeAtSeconds;
-    const reachedCustomCompletion =
-      completionAt !== null &&
-      completionAt > 0 &&
-      completionAt <= reportedDuration &&
-      playbackPosition >= completionAt;
+    const completionAt =
+      media.type === 'series'
+        ? resolveSeriesCompletionAtSeconds(reportedDuration, active)
+        : active.completeAtSeconds;
+    const reachedCustomCompletion = completionAt !== null && playbackPosition >= completionAt;
 
     if (
       Date.now() < suppressNextEpisodeUntilRef.current ||

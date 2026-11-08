@@ -1172,6 +1172,17 @@ export const tr = {
       markCompleted: 'Bölümü şurada tamamla (saniye)',
       noOpeningSkip: 'Atlama yok',
       defaultCompletion: 'Varsayılan (%99)',
+      completionRuleTitle: 'Tamamlama kuralı',
+      completionUseDefault: 'Varsayılanı kullan (%99)',
+      completionUseSeries: 'Dizi ayarını kullan',
+      completionAtFixedTime: 'Belirli bir zamanda',
+      completionBeforeEnd: 'Bu kadar saniye kalınca',
+      completeWhenSecondsRemain: 'Bölüm şu kadar saniye kala tamamlansın',
+      completionRuleHint: 'Yalnızca bir tamamlama kuralı seçin.',
+      episodeCompletionRuleHint: 'Bir kural seçin veya dizi ayarını devralın.',
+      episodeSettingsHint:
+        'Başlangıç zamanını devralmak için boş bırakın; tamamlama ve atlama noktaları yukarıdaki seçimleri kullanır.',
+      invalidCompletionSeconds: 'Seçilen tamamlama kuralı için 1–360000 arasında tam saniye girin.',
       save: 'Ayarları kaydet',
       saving: 'Kaydediliyor...',
       saved: 'Oynatma ayarları kaydedildi.',
@@ -1194,8 +1205,9 @@ export const tr = {
       inheritSeriesBreakpoints: 'Dizi atlama noktalarını kullan',
       customizeEpisodeBreakpoints: 'Bu bölümü özelleştir',
       inheritedBreakpoints: (count: number) =>
-        count === 1 ? 'Bu bölüm diziden 1 atlama noktası kullanıyor.' :
-        `Bu bölüm diziden ${count} atlama noktası kullanıyor.`,
+        count === 1
+          ? 'Bu bölüm diziden 1 atlama noktası kullanıyor.'
+          : `Bu bölüm diziden ${count} atlama noktası kullanıyor.`,
     },
   },
 

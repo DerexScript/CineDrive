@@ -1,5 +1,5 @@
-import React, { useEffect, useState, type FormEvent } from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import React, { useRef, useState, type FormEvent } from 'react';
+import { ChevronDown, Plus, Trash2 } from 'lucide-react';
 import {
   MAX_PLAYBACK_SKIP_BREAKPOINTS,
   playbackSkipBreakpointsSchema,
@@ -58,6 +58,84 @@ const SecondsField: React.FC<{
     />
   </label>
 );
+
+type CompletionRuleMode = 'inherit' | 'default' | 'fixed' | 'remaining';
+type CompletionRuleDraft =
+  { mode: 'inherit' | 'default' } | { mode: 'fixed' | 'remaining'; seconds: string };
+
+const toCompletionRuleDraft = (
+  completeAtSeconds: number | null | undefined,
+  completeBeforeEndSeconds: number | null | undefined,
+  inherited: boolean,
+): CompletionRuleDraft => {
+  if (completeBeforeEndSeconds != null) {
+    return { mode: 'remaining', seconds: String(completeBeforeEndSeconds) };
+  }
+  if (completeAtSeconds != null) return { mode: 'fixed', seconds: String(completeAtSeconds) };
+  return { mode: inherited ? 'inherit' : 'default' };
+};
+
+const createCompletionRuleDraft = (mode: CompletionRuleMode): CompletionRuleDraft =>
+  mode === 'fixed' || mode === 'remaining' ? { mode, seconds: '' } : { mode };
+
+const CompletionRuleEditor: React.FC<{
+  idPrefix: string;
+  draft: CompletionRuleDraft;
+  options: CompletionRuleMode[];
+  hint: string;
+  onModeChange: (mode: CompletionRuleMode) => void;
+  onSecondsChange: (seconds: string) => void;
+}> = ({ idPrefix, draft, options, hint, onModeChange, onSecondsChange }) => {
+  const labels: Record<CompletionRuleMode, string> = {
+    inherit: t.mediaDetail.playbackSettings.completionUseSeries,
+    default: t.mediaDetail.playbackSettings.completionUseDefault,
+    fixed: t.mediaDetail.playbackSettings.completionAtFixedTime,
+    remaining: t.mediaDetail.playbackSettings.completionBeforeEnd,
+  };
+
+  return (
+    <fieldset className="space-y-3 md:col-span-1">
+      <legend className="text-sm font-medium text-zinc-200">
+        {t.mediaDetail.playbackSettings.completionRuleTitle}
+      </legend>
+      <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-zinc-300">
+        {options.map((mode) => (
+          <label key={mode} className="inline-flex items-center gap-2">
+            <input
+              type="radio"
+              name={`${idPrefix}-completion-mode`}
+              checked={draft.mode === mode}
+              onChange={() => onModeChange(mode)}
+              className="accent-brand-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500"
+            />
+            {labels[mode]}
+          </label>
+        ))}
+      </div>
+      {draft.mode === 'fixed' && (
+        <SecondsField
+          id={`${idPrefix}-completion-fixed`}
+          label={t.mediaDetail.playbackSettings.markCompleted}
+          value={draft.seconds}
+          min={1}
+          placeholder="e.g. 1200"
+          onChange={onSecondsChange}
+        />
+      )}
+      {draft.mode === 'remaining' && (
+        <SecondsField
+          id={`${idPrefix}-completion-remaining`}
+          label={t.mediaDetail.playbackSettings.completeWhenSecondsRemain}
+          value={draft.seconds}
+          min={1}
+          placeholder="e.g. 60"
+          onChange={onSecondsChange}
+        />
+      )}
+      <p className="text-xs text-zinc-500">{hint}</p>
+    </fieldset>
+  );
+};
 
 const SkipBreakpointsEditor: React.FC<{
   idPrefix: string;
@@ -164,6 +242,7 @@ interface SeriesPlaybackSettingsProps {
   mediaId: string;
   startAtSeconds?: number | null;
   completeAtSeconds?: number | null;
+  completeBeforeEndSeconds?: number | null;
   skipBreakpoints?: PlaybackSkipBreakpoint[] | null;
 }
 
@@ -171,33 +250,35 @@ export const SeriesPlaybackSettings: React.FC<SeriesPlaybackSettingsProps> = ({
   mediaId,
   startAtSeconds,
   completeAtSeconds,
+  completeBeforeEndSeconds,
   skipBreakpoints,
 }) => {
   const mutation = useUpdateSeriesPlaybackSettingsMutation();
   const [startAt, setStartAt] = useState(startAtSeconds == null ? '' : String(startAtSeconds));
-  const [completeAt, setCompleteAt] = useState(
-    completeAtSeconds == null ? '' : String(completeAtSeconds),
+  const [completionDraft, setCompletionDraft] = useState(() =>
+    toCompletionRuleDraft(completeAtSeconds, completeBeforeEndSeconds, false),
   );
   const [skipBreakpointDrafts, setSkipBreakpointDrafts] = useState(() =>
     toSkipBreakpointDrafts(skipBreakpoints ?? EMPTY_SKIP_BREAKPOINTS),
   );
 
-  useEffect(() => {
-    setStartAt(startAtSeconds == null ? '' : String(startAtSeconds));
-    setCompleteAt(completeAtSeconds == null ? '' : String(completeAtSeconds));
-  }, [startAtSeconds, completeAtSeconds]);
-
-  useEffect(() => {
-    setSkipBreakpointDrafts(toSkipBreakpointDrafts(skipBreakpoints ?? EMPTY_SKIP_BREAKPOINTS));
-  }, [skipBreakpoints]);
-
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     const parsedStartAt = parseSeconds(startAt);
-    const parsedCompleteAt = parseSeconds(completeAt, 1);
     const parsedSkipBreakpoints = parseSkipBreakpointDrafts(skipBreakpointDrafts);
-    if (parsedStartAt === undefined || parsedCompleteAt === undefined) {
+    if (parsedStartAt === undefined) {
       toast.error(t.mediaDetail.playbackSettings.secondsHint);
+      return;
+    }
+    const parsedCompletionSeconds =
+      completionDraft.mode === 'fixed' || completionDraft.mode === 'remaining'
+        ? parseSeconds(completionDraft.seconds, 1)
+        : null;
+    if (
+      (completionDraft.mode === 'fixed' || completionDraft.mode === 'remaining') &&
+      typeof parsedCompletionSeconds !== 'number'
+    ) {
+      toast.error(t.mediaDetail.playbackSettings.invalidCompletionSeconds);
       return;
     }
     if (parsedSkipBreakpoints === undefined) {
@@ -206,14 +287,29 @@ export const SeriesPlaybackSettings: React.FC<SeriesPlaybackSettingsProps> = ({
     }
 
     try {
-      await mutation.mutateAsync({
+      const updatedMediaItem = await mutation.mutateAsync({
         id: mediaId,
         data: {
           startAtSeconds: parsedStartAt,
-          completeAtSeconds: parsedCompleteAt,
+          completeAtSeconds: completionDraft.mode === 'fixed' ? parsedCompletionSeconds! : null,
+          completeBeforeEndSeconds:
+            completionDraft.mode === 'remaining' ? parsedCompletionSeconds! : null,
           skipBreakpoints: parsedSkipBreakpoints,
         },
       });
+      setStartAt(
+        updatedMediaItem.startAtSeconds == null ? '' : String(updatedMediaItem.startAtSeconds),
+      );
+      setCompletionDraft(
+        toCompletionRuleDraft(
+          updatedMediaItem.completeAtSeconds,
+          updatedMediaItem.completeBeforeEndSeconds,
+          false,
+        ),
+      );
+      setSkipBreakpointDrafts(
+        toSkipBreakpointDrafts(updatedMediaItem.skipBreakpoints ?? EMPTY_SKIP_BREAKPOINTS),
+      );
       toast.success(t.mediaDetail.playbackSettings.saved);
     } catch (error) {
       toast.fromError(error, t.mediaDetail.playbackSettings.saveFailed);
@@ -221,15 +317,23 @@ export const SeriesPlaybackSettings: React.FC<SeriesPlaybackSettingsProps> = ({
   };
 
   return (
-    <section className="rounded-2xl border border-zinc-800 bg-zinc-900/50 p-5 md:p-6">
-      <div className="mb-5">
-        <h2 className="text-lg font-semibold text-white">{t.mediaDetail.playbackSettings.title}</h2>
-        <p className="mt-1 text-sm text-zinc-400">
-          {t.mediaDetail.playbackSettings.description}{' '}
-          {t.mediaDetail.playbackSettings.seriesDescription}
-        </p>
-      </div>
-      <form onSubmit={handleSubmit} className="grid gap-4 md:grid-cols-2">
+    <details className="group rounded-2xl border border-zinc-800 bg-zinc-900/50 p-5 md:p-6">
+      <summary className="flex cursor-pointer list-none items-start justify-between gap-4 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 [&::-webkit-details-marker]:hidden">
+        <div>
+          <h2 className="text-lg font-semibold text-white">
+            {t.mediaDetail.playbackSettings.title}
+          </h2>
+          <p className="mt-1 text-sm text-zinc-400">
+            {t.mediaDetail.playbackSettings.description}{' '}
+            {t.mediaDetail.playbackSettings.seriesDescription}
+          </p>
+        </div>
+        <ChevronDown
+          aria-hidden="true"
+          className="mt-1 h-5 w-5 shrink-0 text-zinc-400 transition-transform group-open:rotate-180"
+        />
+      </summary>
+      <form onSubmit={handleSubmit} className="mt-5 grid gap-4 md:grid-cols-2">
         <SecondsField
           id={`series-start-${mediaId}`}
           label={t.mediaDetail.playbackSettings.skipOpening}
@@ -237,13 +341,17 @@ export const SeriesPlaybackSettings: React.FC<SeriesPlaybackSettingsProps> = ({
           placeholder={t.mediaDetail.playbackSettings.noOpeningSkip}
           onChange={setStartAt}
         />
-        <SecondsField
-          id={`series-complete-${mediaId}`}
-          label={t.mediaDetail.playbackSettings.markCompleted}
-          value={completeAt}
-          min={1}
-          placeholder={t.mediaDetail.playbackSettings.defaultCompletion}
-          onChange={setCompleteAt}
+        <CompletionRuleEditor
+          idPrefix={`series-${mediaId}`}
+          draft={completionDraft}
+          options={['default', 'fixed', 'remaining']}
+          hint={t.mediaDetail.playbackSettings.completionRuleHint}
+          onModeChange={(mode) => setCompletionDraft(createCompletionRuleDraft(mode))}
+          onSecondsChange={(seconds) =>
+            setCompletionDraft((draft) =>
+              draft.mode === 'fixed' || draft.mode === 'remaining' ? { ...draft, seconds } : draft,
+            )
+          }
         />
         <div className="md:col-span-2">
           <SkipBreakpointsEditor
@@ -265,7 +373,7 @@ export const SeriesPlaybackSettings: React.FC<SeriesPlaybackSettingsProps> = ({
           </button>
         </div>
       </form>
-    </section>
+    </details>
   );
 };
 
@@ -288,37 +396,33 @@ export const EpisodePlaybackSettings: React.FC<EpisodePlaybackSettingsProps> = (
   const [startAt, setStartAt] = useState(
     episode.startAtSeconds == null ? '' : String(episode.startAtSeconds),
   );
-  const [completeAt, setCompleteAt] = useState(
-    episode.completeAtSeconds == null ? '' : String(episode.completeAtSeconds),
+  const [completionDraft, setCompletionDraft] = useState(() =>
+    toCompletionRuleDraft(episode.completeAtSeconds, episode.completeBeforeEndSeconds, true),
   );
   const [skipBreakpointDrafts, setSkipBreakpointDrafts] = useState(() =>
     toSkipBreakpointDrafts(episode.skipBreakpoints ?? inheritedSkipBreakpoints),
   );
-
-  useEffect(() => {
-    setInheritSkipBreakpoints(episode.skipBreakpoints == null);
-    setStartAt(episode.startAtSeconds == null ? '' : String(episode.startAtSeconds));
-    setCompleteAt(episode.completeAtSeconds == null ? '' : String(episode.completeAtSeconds));
-    setSkipBreakpointDrafts(
-      toSkipBreakpointDrafts(episode.skipBreakpoints ?? inheritedSkipBreakpoints),
-    );
-  }, [
-    episode.id,
-    episode.startAtSeconds,
-    episode.completeAtSeconds,
-    episode.skipBreakpoints,
-    inheritedSkipBreakpoints,
-  ]);
+  const hasCustomSkipBreakpointDraftRef = useRef(episode.skipBreakpoints != null);
 
   const handleSubmit = async (event: FormEvent) => {
     event.preventDefault();
     const parsedStartAt = parseSeconds(startAt);
-    const parsedCompleteAt = parseSeconds(completeAt, 1);
+    const parsedCompletionSeconds =
+      completionDraft.mode === 'fixed' || completionDraft.mode === 'remaining'
+        ? parseSeconds(completionDraft.seconds, 1)
+        : null;
     const parsedSkipBreakpoints = inheritSkipBreakpoints
       ? null
       : parseSkipBreakpointDrafts(skipBreakpointDrafts);
-    if (parsedStartAt === undefined || parsedCompleteAt === undefined) {
+    if (parsedStartAt === undefined) {
       toast.error(t.mediaDetail.playbackSettings.secondsHint);
+      return;
+    }
+    if (
+      (completionDraft.mode === 'fixed' || completionDraft.mode === 'remaining') &&
+      typeof parsedCompletionSeconds !== 'number'
+    ) {
+      toast.error(t.mediaDetail.playbackSettings.invalidCompletionSeconds);
       return;
     }
     if (!inheritSkipBreakpoints && parsedSkipBreakpoints === undefined) {
@@ -327,15 +431,32 @@ export const EpisodePlaybackSettings: React.FC<EpisodePlaybackSettingsProps> = (
     }
 
     try {
-      await mutation.mutateAsync({
+      const updatedEpisode = await mutation.mutateAsync({
         mediaId,
         episodeId: episode.id,
         data: {
           startAtSeconds: parsedStartAt,
-          completeAtSeconds: parsedCompleteAt,
+          completeAtSeconds: completionDraft.mode === 'fixed' ? parsedCompletionSeconds! : null,
+          completeBeforeEndSeconds:
+            completionDraft.mode === 'remaining' ? parsedCompletionSeconds! : null,
           skipBreakpoints: parsedSkipBreakpoints,
         },
       });
+      setStartAt(
+        updatedEpisode.startAtSeconds == null ? '' : String(updatedEpisode.startAtSeconds),
+      );
+      setCompletionDraft(
+        toCompletionRuleDraft(
+          updatedEpisode.completeAtSeconds,
+          updatedEpisode.completeBeforeEndSeconds,
+          true,
+        ),
+      );
+      setInheritSkipBreakpoints(updatedEpisode.skipBreakpoints == null);
+      hasCustomSkipBreakpointDraftRef.current = updatedEpisode.skipBreakpoints != null;
+      setSkipBreakpointDrafts(
+        toSkipBreakpointDrafts(updatedEpisode.skipBreakpoints ?? inheritedSkipBreakpoints),
+      );
       toast.success(t.mediaDetail.playbackSettings.episodeSaved);
     } catch (error) {
       toast.fromError(error, t.mediaDetail.playbackSettings.saveFailed);
@@ -357,17 +478,17 @@ export const EpisodePlaybackSettings: React.FC<EpisodePlaybackSettingsProps> = (
           }
           onChange={setStartAt}
         />
-        <SecondsField
-          id={`episode-complete-${episode.id}`}
-          label={t.mediaDetail.playbackSettings.markCompleted}
-          value={completeAt}
-          min={1}
-          placeholder={
-            episode.completeAtSeconds == null
-              ? t.mediaDetail.playbackSettings.inheritHint
-              : undefined
+        <CompletionRuleEditor
+          idPrefix={`episode-${episode.id}`}
+          draft={completionDraft}
+          options={['inherit', 'fixed', 'remaining']}
+          hint={t.mediaDetail.playbackSettings.episodeCompletionRuleHint}
+          onModeChange={(mode) => setCompletionDraft(createCompletionRuleDraft(mode))}
+          onSecondsChange={(seconds) =>
+            setCompletionDraft((draft) =>
+              draft.mode === 'fixed' || draft.mode === 'remaining' ? { ...draft, seconds } : draft,
+            )
           }
-          onChange={setCompleteAt}
         />
         <fieldset className="space-y-3 rounded-xl border border-zinc-800 bg-zinc-950/30 p-3 sm:col-span-2">
           <legend className="px-1 text-sm font-medium text-zinc-200">
@@ -389,7 +510,13 @@ export const EpisodePlaybackSettings: React.FC<EpisodePlaybackSettingsProps> = (
                 type="radio"
                 name={`episode-skip-mode-${episode.id}`}
                 checked={!inheritSkipBreakpoints}
-                onChange={() => setInheritSkipBreakpoints(false)}
+                onChange={() => {
+                  if (!hasCustomSkipBreakpointDraftRef.current) {
+                    setSkipBreakpointDrafts(toSkipBreakpointDrafts(inheritedSkipBreakpoints));
+                  }
+                  hasCustomSkipBreakpointDraftRef.current = true;
+                  setInheritSkipBreakpoints(false);
+                }}
                 className="accent-brand-500"
               />
               {t.mediaDetail.playbackSettings.customizeEpisodeBreakpoints}
@@ -403,12 +530,17 @@ export const EpisodePlaybackSettings: React.FC<EpisodePlaybackSettingsProps> = (
             <SkipBreakpointsEditor
               idPrefix={`episode-skips-${episode.id}`}
               drafts={skipBreakpointDrafts}
-              onChange={setSkipBreakpointDrafts}
+              onChange={(drafts) => {
+                hasCustomSkipBreakpointDraftRef.current = true;
+                setSkipBreakpointDrafts(drafts);
+              }}
             />
           )}
         </fieldset>
         <div className="sm:col-span-2 flex flex-wrap items-center justify-between gap-3">
-          <p className="text-xs text-zinc-500">{t.mediaDetail.playbackSettings.inheritHint}</p>
+          <p className="text-xs text-zinc-500">
+            {t.mediaDetail.playbackSettings.episodeSettingsHint}
+          </p>
           <button
             type="submit"
             disabled={mutation.isPending}

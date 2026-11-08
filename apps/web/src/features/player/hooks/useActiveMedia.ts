@@ -6,7 +6,7 @@ import type {
   PlaybackProgressType,
 } from '../../../types/media';
 import type { SubtitleItemType } from '../../../types/media';
-import type { PlaybackSkipBreakpoint } from '@cinedrive/shared';
+import { resolveSeriesCompletionSettings, type PlaybackSkipBreakpoint } from '@cinedrive/shared';
 
 export interface ActiveMedia {
   driveFileId: string | null;
@@ -23,6 +23,7 @@ export interface ActiveMedia {
   analyzedHeight?: number;
   startAtSeconds: number;
   completeAtSeconds: number | null;
+  completeBeforeEndSeconds: number | null;
   skipBreakpoints: PlaybackSkipBreakpoint[];
   progress: PlaybackProgressType | null;
   subtitles: SubtitleItemType[];
@@ -52,6 +53,7 @@ export const useActiveMedia = (media: MediaItemType, episodeId?: string): Active
       activeEpisodeId: episodeId,
       startAtSeconds: 0,
       completeAtSeconds: null,
+      completeBeforeEndSeconds: null,
       skipBreakpoints: [],
       progress: media.progress || null,
       subtitles: media.subtitles || [],
@@ -82,6 +84,8 @@ export const useActiveMedia = (media: MediaItemType, episodeId?: string): Active
 
     if (!episode) return { ...base, episodes };
 
+    const completionSettings = resolveSeriesCompletionSettings(episode, media);
+
     return {
       ...base,
       episodes,
@@ -90,7 +94,8 @@ export const useActiveMedia = (media: MediaItemType, episodeId?: string): Active
       nextEpisode: episodeIndex < episodes.length - 1 ? episodes[episodeIndex + 1]! : null,
       activeEpisodeId: episode.id,
       startAtSeconds: episode.startAtSeconds ?? media.startAtSeconds ?? 0,
-      completeAtSeconds: episode.completeAtSeconds ?? media.completeAtSeconds ?? null,
+      completeAtSeconds: completionSettings.completeAtSeconds ?? null,
+      completeBeforeEndSeconds: completionSettings.completeBeforeEndSeconds ?? null,
       skipBreakpoints: episode.skipBreakpoints ?? media.skipBreakpoints ?? [],
       driveFileId: episode.driveFileId,
       title: formatEpisodeTitle(media.title, episode),
@@ -101,8 +106,7 @@ export const useActiveMedia = (media: MediaItemType, episodeId?: string): Active
       analyzedHeight: episode.technicalMetadata?.mediaHeight,
       progress:
         episode.playbackProgresses?.[0] ||
-        (media.progress?.episodeId === episode.id ||
-        (!episodeId && !media.progress?.episodeId)
+        (media.progress?.episodeId === episode.id || (!episodeId && !media.progress?.episodeId)
           ? media.progress || null
           : null),
       subtitles: episode.subtitles || media.subtitles || [],

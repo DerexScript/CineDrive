@@ -1170,6 +1170,18 @@ export const en: Translations = {
       markCompleted: 'Mark episode complete at (seconds)',
       noOpeningSkip: 'No skip',
       defaultCompletion: 'Default (99%)',
+      completionRuleTitle: 'Completion rule',
+      completionUseDefault: 'Use default (99%)',
+      completionUseSeries: 'Use series setting',
+      completionAtFixedTime: 'At a fixed time',
+      completionBeforeEnd: 'When this many seconds remain',
+      completeWhenSecondsRemain: 'Mark episode complete with (seconds) remaining',
+      completionRuleHint: 'Choose exactly one completion rule.',
+      episodeCompletionRuleHint: 'Choose one rule, or inherit the series setting.',
+      episodeSettingsHint:
+        'Leave the start time blank to inherit it; completion and skip points use the choices above.',
+      invalidCompletionSeconds:
+        'Enter a whole number from 1 to 360000 seconds for the selected completion rule.',
       save: 'Save settings',
       saving: 'Saving...',
       saved: 'Playback settings saved.',
@@ -1192,8 +1204,9 @@ export const en: Translations = {
       inheritSeriesBreakpoints: 'Use series skip points',
       customizeEpisodeBreakpoints: 'Customize for this episode',
       inheritedBreakpoints: (count: number) =>
-        count === 1 ? 'This episode inherits 1 skip point from the series.' :
-        `This episode inherits ${count} skip points from the series.`,
+        count === 1
+          ? 'This episode inherits 1 skip point from the series.'
+          : `This episode inherits ${count} skip points from the series.`,
     },
   },
 
