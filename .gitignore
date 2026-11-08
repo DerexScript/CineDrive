@@ -1,12 +1,57 @@
 node_modules
 dist
-.env
-.env.local
-release.env
+
+# Local environment files and credential-bearing configuration.
+.env*
+!.env.example
+!.env.*.example
+release.env*
+!release.env.example
+.npmrc
+!.npmrc.example
+
+# Local OAuth credentials, API tokens, and private key material.
+credentials*.json
+client_secret*.json
+service-account*.json
+service_account*.json
+token.json
+tokens.json
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+
+# Local databases, SQLite sidecars, and database backups.
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
 # Copies taken before a schema change; `*.db` alone does not match them.
 *.db.backup*
+*.sqlite.backup*
+
+# Local logs.
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+
+# Local tools, diagnostics, and launchers; not needed to build the app.
+/ffmpeg-master-latest-win64-gpl
+/problema
+/apps/server/init.mp4
+/CineDrive.bat
+package-lock.json
+npm-shrinkwrap.json
+
 .DS_Store
 coverage
 build
