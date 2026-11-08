@@ -2,6 +2,11 @@ import fs from 'node:fs';
 import type { FastifyPluginAsync } from 'fastify';
 import { resolveSafeLocalFile } from '../../services/local-folder-validation.js';
 import {
+  getAudioTrackCatalog,
+  getPreferredAudioLanguage,
+  resolveAudioTrackRequest,
+} from '../../services/audio-track-catalog.service.js';
+import {
   driveSourceInput,
   hlsCacheKey,
   isClientAbandonedHlsError,
@@ -10,11 +15,46 @@ import {
   resolveActiveDriveFile,
 } from './shared.js';
 
+type HlsAudioSelection =
+  | { valid: true; streamIndex: number | null | undefined; useFileDefault: boolean }
+  | { valid: false };
+
+const parseHlsAudioSelection = (value: unknown): HlsAudioSelection => {
+  if (value === 'default') {
+    return { valid: true, streamIndex: undefined, useFileDefault: true };
+  }
+  if (value === undefined || value === 'auto') {
+    return { valid: true, streamIndex: undefined, useFileDefault: false };
+  }
+  if (value === 'none') return { valid: true, streamIndex: null, useFileDefault: false };
+  if (typeof value !== 'string' || !/^\d{1,4}$/.test(value)) return { valid: false };
+  const streamIndex = Number(value);
+  return Number.isSafeInteger(streamIndex)
+    ? { valid: true, streamIndex, useFileDefault: false }
+    : { valid: false };
+};
+
+const resolveHlsAudioSelection = async (
+  fastify: Parameters<typeof getAudioTrackCatalog>[0],
+  file: Parameters<typeof getAudioTrackCatalog>[1],
+  userId: string,
+  localFilePath: string | undefined,
+  requestedIndex: number | null | undefined,
+) => {
+  const tracks = await getAudioTrackCatalog(fastify, file, userId, localFilePath);
+  if (requestedIndex === null) {
+    if (tracks.length > 0) throw new Error('AUDIO_TRACK_SELECTION_INVALID');
+    return null;
+  }
+  const preferredLanguage = await getPreferredAudioLanguage(fastify, userId);
+  return resolveAudioTrackRequest(tracks, requestedIndex, preferredLanguage)?.streamIndex ?? null;
+};
+
 /** Playlist, segment and lifecycle endpoints for the Safari/WebKit HLS path. */
 export const mediaHlsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get<{
     Params: { driveFileId: string };
-    Querystring: { start?: string; session?: string };
+    Querystring: { start?: string; session?: string; audioTrackIndex?: string };
   }>('/:driveFileId/hls/index.m3u8', async (request, reply) => {
     const driveFile = await resolveActiveDriveFile(
       fastify,
@@ -64,6 +104,16 @@ export const mediaHlsRoutes: FastifyPluginAsync = async (fastify) => {
           },
         });
       }
+      const requestedAudio = parseHlsAudioSelection(request.query.audioTrackIndex);
+      if (!requestedAudio.valid) {
+        return reply.status(400).send({
+          error: {
+            code: 'INVALID_AUDIO_TRACK',
+            message: 'Invalid audio track selection.',
+            requestId: request.id,
+          },
+        });
+      }
       let safeLocalFilePath: string | undefined;
       if (driveFile.storageType === 'local' && driveFile.localFilePath) {
         try {
@@ -81,8 +131,36 @@ export const mediaHlsRoutes: FastifyPluginAsync = async (fastify) => {
           });
         }
       }
+      let audioTrackIndex: number | null | undefined;
+      let useFileDefaultAudio = requestedAudio.useFileDefault;
+      if (useFileDefaultAudio) {
+        audioTrackIndex = undefined;
+      } else {
+        try {
+          audioTrackIndex = await resolveHlsAudioSelection(
+            fastify,
+            driveFile,
+            request.user!.id,
+            safeLocalFilePath,
+            requestedAudio.streamIndex,
+          );
+        } catch (error) {
+          if (requestedAudio.streamIndex !== undefined) {
+            return reply.status(400).send({
+              error: {
+                code: 'AUDIO_TRACK_NOT_FOUND',
+                message: 'The requested audio track is not available for this file.',
+                requestId: request.id,
+              },
+            });
+          }
+          request.log.warn({ error, driveFileId: driveFile.id }, 'Using default HLS audio mapping');
+          audioTrackIndex = undefined;
+          useFileDefaultAudio = true;
+        }
+      }
       const playlistPath = await fastify.hlsService.ensureHls(
-        hlsCacheKey(driveFile, startSeconds),
+        hlsCacheKey(driveFile, startSeconds, audioTrackIndex),
         async () => {
           if (safeLocalFilePath) {
             return safeLocalFilePath;
@@ -100,8 +178,16 @@ export const mediaHlsRoutes: FastifyPluginAsync = async (fastify) => {
         driveFile.videoCodec,
         abortController.signal,
         request.user!.id,
+        audioTrackIndex,
       );
-      const assetQuery = `?start=${startSeconds}`;
+      const audioQueryValue = useFileDefaultAudio
+        ? 'default'
+        : audioTrackIndex === undefined
+          ? 'auto'
+          : audioTrackIndex === null
+            ? 'none'
+            : String(audioTrackIndex);
+      const assetQuery = `?start=${startSeconds}&audioTrackIndex=${audioQueryValue}`;
       const playlist = fs
         .readFileSync(playlistPath, 'utf8')
         .replace(/#EXT-X-MAP:URI="([^"]+)"/g, `#EXT-X-MAP:URI="$1${assetQuery}"`)
@@ -164,18 +250,13 @@ export const mediaHlsRoutes: FastifyPluginAsync = async (fastify) => {
     if (startSeconds === null || !sessionId) {
       return reply.status(400).send();
     }
-
-    const stopped = fastify.hlsService.releaseHls(
-      hlsCacheKey(driveFile, startSeconds),
-      sessionId,
-      request.user!.id,
-    );
+    const stopped = fastify.hlsService.releaseHlsForFile(driveFile.id, sessionId, request.user!.id);
     return reply.status(200).send({ stopped });
   });
 
   fastify.get<{
     Params: { driveFileId: string; assetName: string };
-    Querystring: { start?: string };
+    Querystring: { start?: string; audioTrackIndex?: string };
   }>('/:driveFileId/hls/:assetName', async (request, reply) => {
     const driveFile = await resolveActiveDriveFile(
       fastify,
@@ -186,9 +267,32 @@ export const mediaHlsRoutes: FastifyPluginAsync = async (fastify) => {
 
     try {
       const startSeconds = parseHlsStart(request.query.start);
-      if (startSeconds === null) return reply.status(400).send();
+      const requestedAudio = parseHlsAudioSelection(request.query.audioTrackIndex);
+      if (startSeconds === null || !requestedAudio.valid) return reply.status(400).send();
+      const localFilePath =
+        driveFile.storageType === 'local' && driveFile.localFilePath
+          ? await resolveSafeLocalFile(driveFile.library.localFolderPath, driveFile.localFilePath)
+          : undefined;
+      let audioTrackIndex: number | null | undefined;
+      if (requestedAudio.useFileDefault) {
+        audioTrackIndex = undefined;
+      } else {
+        try {
+          audioTrackIndex = await resolveHlsAudioSelection(
+            fastify,
+            driveFile,
+            request.user!.id,
+            localFilePath,
+            requestedAudio.streamIndex,
+          );
+        } catch (error) {
+          if (requestedAudio.streamIndex !== undefined) throw error;
+          request.log.warn({ error, driveFileId: driveFile.id }, 'Using default HLS asset mapping');
+          audioTrackIndex = undefined;
+        }
+      }
       const assetPath = fastify.hlsService.resolveAsset(
-        hlsCacheKey(driveFile, startSeconds),
+        hlsCacheKey(driveFile, startSeconds, audioTrackIndex),
         request.params.assetName,
       );
       if (!fs.existsSync(assetPath)) return reply.status(404).send();

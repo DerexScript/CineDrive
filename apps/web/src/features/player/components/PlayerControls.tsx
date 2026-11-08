@@ -23,6 +23,8 @@ import { PlaybackSpeedMenu } from './PlaybackSpeedMenu';
 import { useUiStore } from '../../../stores/useUiStore';
 import type { SubtitleTrackType } from '../types/player';
 import { QualityMenu, type QualityPreference } from './QualityMenu';
+import { AudioTrackMenu } from './AudioTrackMenu';
+import type { AudioTrackDto, PreferredAudioLanguage } from '../../../hooks/useApi';
 
 interface PlayerControlsProps {
   mediaId?: string;
@@ -36,6 +38,11 @@ interface PlayerControlsProps {
   volume: number;
   isMuted: boolean;
   playbackSpeed: number;
+  audioTracks?: AudioTrackDto[];
+  preferredAudioLanguage?: PreferredAudioLanguage;
+  recommendedAudioTrackIndex?: number | null;
+  selectedAudioTrackIndex?: number | null;
+  canDisableCompatibilityMode?: boolean;
   subtitles?: SubtitleTrackType[];
   activeSubtitleId: string | null;
   hasPreviousEpisode?: boolean;
@@ -54,6 +61,7 @@ interface PlayerControlsProps {
   onToggleMute: () => void;
   onSelectSpeed: (speed: number) => void;
   onSelectSubtitle: (id: string | null) => void;
+  onSelectAudioTrack?: (streamIndex: number | null) => void;
   onUploadCustomSubtitle?: (file: File) => void;
   onSelectOpenSubtitle?: (fileId: number, label: string, languageCode: string) => Promise<void>;
   onTogglePiP: () => void;
@@ -74,6 +82,11 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   volume,
   isMuted,
   playbackSpeed,
+  audioTracks = [],
+  preferredAudioLanguage = 'pt-BR',
+  recommendedAudioTrackIndex = null,
+  selectedAudioTrackIndex = null,
+  canDisableCompatibilityMode = true,
   subtitles = [],
   activeSubtitleId,
   hasPreviousEpisode,
@@ -92,6 +105,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   onToggleMute,
   onSelectSpeed,
   onSelectSubtitle,
+  onSelectAudioTrack,
   onUploadCustomSubtitle,
   onSelectOpenSubtitle,
   onTogglePiP,
@@ -100,6 +114,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   onNextEpisode,
 }) => {
   const [subtitleMenuOpen, setSubtitleMenuOpen] = useState(false);
+  const [audioMenuOpen, setAudioMenuOpen] = useState(false);
   const [speedMenuOpen, setSpeedMenuOpen] = useState(false);
   const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
   const { cinemaMode, toggleCinemaMode } = useUiStore();
@@ -141,6 +156,17 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
           onClose={() => setSubtitleMenuOpen(false)}
         />
       )}
+
+      {audioMenuOpen && onSelectAudioTrack ? (
+        <AudioTrackMenu
+          tracks={audioTracks}
+          preferredLanguage={preferredAudioLanguage}
+          recommendedStreamIndex={recommendedAudioTrackIndex}
+          selectedStreamIndex={selectedAudioTrackIndex}
+          onSelectTrack={onSelectAudioTrack}
+          onClose={() => setAudioMenuOpen(false)}
+        />
+      ) : null}
 
       {speedMenuOpen && (
         <PlaybackSpeedMenu
@@ -260,6 +286,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
           <button
             onClick={() => {
               setSubtitleMenuOpen(!subtitleMenuOpen);
+              setAudioMenuOpen(false);
               setSpeedMenuOpen(false);
             }}
             aria-label={t.player.controls.subtitleMenu}
@@ -268,16 +295,41 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
             <Subtitles className="h-5 w-5" />
           </button>
 
+          {audioTracks.length > 1 && onSelectAudioTrack ? (
+            <button
+              type="button"
+              onClick={() => {
+                setAudioMenuOpen(!audioMenuOpen);
+                setSubtitleMenuOpen(false);
+                setSpeedMenuOpen(false);
+                setQualityMenuOpen(false);
+              }}
+              aria-label={t.player.controls.audioMenu}
+              aria-expanded={audioMenuOpen}
+              title={t.player.controls.audioMenu}
+              className={audioMenuOpen ? activeControlClasses : controlClasses}
+            >
+              <Volume2 className="h-5 w-5" />
+            </button>
+          ) : null}
+
           {onToggleTranscode && (
             <button
-              onClick={onToggleTranscode}
-              aria-label={t.player.controls.transcodeToggle}
-              title={
-                useTranscode
-                  ? t.player.controls.transcodeActive
-                  : t.player.controls.transcodeEnable
+              onClick={canDisableCompatibilityMode ? onToggleTranscode : undefined}
+              disabled={!canDisableCompatibilityMode}
+              aria-label={
+                canDisableCompatibilityMode
+                  ? t.player.controls.transcodeToggle
+                  : t.player.controls.transcodeRequiredForAudio
               }
-              className={useTranscode ? activeControlClasses : controlClasses}
+              title={
+                !canDisableCompatibilityMode
+                  ? t.player.controls.transcodeRequiredForAudio
+                  : useTranscode
+                    ? t.player.controls.transcodeActive
+                    : t.player.controls.transcodeEnable
+              }
+              className={`${useTranscode ? activeControlClasses : controlClasses} disabled:cursor-not-allowed disabled:opacity-50`}
             >
               <Radio className="h-5 w-5" />
             </button>
@@ -289,6 +341,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
                 setQualityMenuOpen(!qualityMenuOpen);
                 setSpeedMenuOpen(false);
                 setSubtitleMenuOpen(false);
+                setAudioMenuOpen(false);
               }}
               aria-label={t.player.controls.qualityMenu}
               title={t.player.controls.qualityTitle(
@@ -306,6 +359,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
             onClick={() => {
               setSpeedMenuOpen(!speedMenuOpen);
               setSubtitleMenuOpen(false);
+              setAudioMenuOpen(false);
             }}
             aria-label={t.player.controls.speedMenu}
             className={controlClasses}

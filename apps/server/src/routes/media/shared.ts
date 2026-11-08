@@ -51,6 +51,7 @@ export const hlsCacheKey = (
     md5Checksum: string | null;
   },
   startSeconds = 0,
+  audioTrackIndex?: number | null,
 ) => {
   const fingerprint = createHash('sha256')
     .update(
@@ -62,7 +63,11 @@ export const hlsCacheKey = (
     )
     .digest('hex')
     .slice(0, 12);
-  return `${driveFile.id}-${fingerprint}${startSeconds > 0 ? `-at-${startSeconds}` : ''}`;
+  const audioSuffix =
+    audioTrackIndex === undefined
+      ? ''
+      : `-audio-${audioTrackIndex === null ? 'none' : audioTrackIndex}`;
+  return `${driveFile.id}-${fingerprint}${startSeconds > 0 ? `-at-${startSeconds}` : ''}${audioSuffix}`;
 };
 
 /** Viewer-initiated endings, not failures worth reporting as errors. */

@@ -89,6 +89,7 @@ interface BuildCommandOptions {
   playlistPath: string;
   startSeconds: number;
   videoCodec: string;
+  audioTrackIndex?: number | null;
 }
 
 /** Assembles the FFmpeg invocation that produces an EVENT fMP4 HLS stream. */
@@ -98,6 +99,7 @@ export const buildHlsCommand = ({
   playlistPath,
   startSeconds,
   videoCodec,
+  audioTrackIndex,
 }: BuildCommandOptions): FfmpegCommand => {
   const isRemoteUrlInput = typeof input === 'object' && 'url' in input;
   const inputSource = isRemoteUrlInput ? input.url : input;
@@ -118,7 +120,11 @@ export const buildHlsCommand = ({
     ])
     .outputOptions([
       '-map 0:v:0',
-      '-map 0:a:0?',
+      ...(audioTrackIndex === undefined
+        ? ['-map 0:a:0?']
+        : audioTrackIndex === null
+          ? []
+          : [`-map 0:${audioTrackIndex}`]),
       '-sn',
       '-dn',
       ...videoOptions(videoCodec, accurateSeekRequired),

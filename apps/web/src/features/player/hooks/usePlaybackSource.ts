@@ -43,11 +43,18 @@ interface PlaybackSourceState {
   generation: number;
   qualityPreference: QualityPreference;
   adaptiveQuality: '1080p' | '720p' | '480p';
+  selectedAudioTrackIndex: number | null;
+  selectedAudioDriveFileId: string | null;
 }
 
 type PlaybackSourceAction =
   /** A new episode/movie, or the recommended mode changed. */
-  | { type: 'reset'; playbackMode: PlaybackMode; adaptiveQuality: '1080p' | '720p' | '480p' }
+  | {
+      type: 'reset';
+      driveFileId: string | null;
+      playbackMode: PlaybackMode;
+      adaptiveQuality: '1080p' | '720p' | '480p';
+    }
   /** Restart the stream from an absolute position. */
   | { type: 'seekTo'; offsetSeconds: number }
   /** Same offset, fresh server job (reconnect after a stall or fatal error). */
@@ -58,6 +65,13 @@ type PlaybackSourceAction =
       type: 'setQualityPreference';
       quality: QualityPreference;
       automatic: '1080p' | '720p' | '480p';
+    }
+  | {
+      type: 'setAudioTrack';
+      driveFileId: string | null;
+      streamIndex: number | null;
+      playbackMode: PlaybackMode;
+      offsetSeconds: number;
     }
   /** Auto-downshift after a stall. */
   | { type: 'setAdaptiveQuality'; quality: '1080p' | '720p' | '480p' };
@@ -71,6 +85,8 @@ const reducer = (state: PlaybackSourceState, action: PlaybackSourceAction): Play
         startOffset: 0,
         generation: 0,
         adaptiveQuality: action.adaptiveQuality,
+        selectedAudioTrackIndex: null,
+        selectedAudioDriveFileId: action.driveFileId,
       };
     case 'seekTo':
       // Re-requesting the same offset must still produce a new job, otherwise
@@ -85,6 +101,15 @@ const reducer = (state: PlaybackSourceState, action: PlaybackSourceAction): Play
         ...state,
         playbackMode: action.playbackMode,
         startOffset: action.offsetSeconds !== undefined ? action.offsetSeconds : state.startOffset,
+      };
+    case 'setAudioTrack':
+      return {
+        ...state,
+        selectedAudioTrackIndex: action.streamIndex,
+        selectedAudioDriveFileId: action.driveFileId,
+        playbackMode: action.playbackMode,
+        startOffset: action.offsetSeconds,
+        generation: state.generation + 1,
       };
     case 'setQualityPreference':
       return {
@@ -129,7 +154,14 @@ export const usePlaybackSource = ({
     generation: 0,
     qualityPreference: readStoredQualityPreference(),
     adaptiveQuality: automaticQuality,
+    selectedAudioTrackIndex: null,
+    selectedAudioDriveFileId: driveFileId,
   }));
+
+  // A MediaPlayer instance can advance to another episode before the reset
+  // effect runs. Never send the prior file's stream index to the new file.
+  const selectedAudioTrackIndex =
+    state.selectedAudioDriveFileId === driveFileId ? state.selectedAudioTrackIndex : null;
 
   const effectiveQuality =
     state.qualityPreference === 'auto' ? state.adaptiveQuality : state.qualityPreference;
@@ -142,24 +174,33 @@ export const usePlaybackSource = ({
   const sessionId = useMemo(
     () => createSessionId(),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- a new id is exactly what each of these changes should produce
-    [effectiveQuality, state.startOffset, state.playbackMode, state.generation, driveFileId],
+    [
+      effectiveQuality,
+      state.startOffset,
+      state.playbackMode,
+      state.generation,
+      selectedAudioTrackIndex,
+      driveFileId,
+    ],
   );
 
   const sourceUrl = useMemo(() => {
     if (!driveFileId) return '';
     const { playbackMode, startOffset } = state;
+    const audioTrackQuery =
+      selectedAudioTrackIndex === null ? '' : `&audioTrackIndex=${selectedAudioTrackIndex}`;
 
     if (playbackMode === 'hls') {
-      return `/api/media/${driveFileId}/hls/index.m3u8?start=${startOffset}&session=${sessionId}`;
+      return `/api/media/${driveFileId}/hls/index.m3u8?start=${startOffset}&session=${sessionId}${audioTrackQuery}`;
     }
     if (playbackMode === 'audio') {
-      return `/api/media/${driveFileId}/stream?transcode=audio&start=${startOffset}&session=${sessionId}`;
+      return `/api/media/${driveFileId}/stream?transcode=audio&start=${startOffset}&session=${sessionId}${audioTrackQuery}`;
     }
     if (playbackMode === 'full') {
-      return `/api/media/${driveFileId}/stream?transcode=full&quality=${effectiveQuality}&start=${startOffset}&session=${sessionId}`;
+      return `/api/media/${driveFileId}/stream?transcode=full&quality=${effectiveQuality}&start=${startOffset}&session=${sessionId}${audioTrackQuery}`;
     }
     return `/api/media/${driveFileId}/stream`;
-  }, [driveFileId, effectiveQuality, sessionId, state]);
+  }, [driveFileId, effectiveQuality, selectedAudioTrackIndex, sessionId, state]);
 
   const selectQuality = useCallback(
     (quality: QualityPreference) => {
@@ -169,8 +210,15 @@ export const usePlaybackSource = ({
     [automaticQuality],
   );
 
+  const selectAudioTrack = useCallback(
+    (streamIndex: number | null, offsetSeconds: number, playbackMode: PlaybackMode) =>
+      dispatch({ type: 'setAudioTrack', driveFileId, streamIndex, offsetSeconds, playbackMode }),
+    [driveFileId],
+  );
+
   return {
     ...state,
+    selectedAudioTrackIndex,
     automaticQuality,
     effectiveQuality,
     useTranscode,
@@ -179,6 +227,7 @@ export const usePlaybackSource = ({
     sourceUrl,
     dispatch,
     selectQuality,
+    selectAudioTrack,
   };
 };
 

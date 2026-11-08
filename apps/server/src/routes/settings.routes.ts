@@ -1,5 +1,10 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { z } from 'zod';
+import type { PreferredAudioLanguage } from '../services/audio-track-catalog.service.js';
+
+const playbackSettingsSchema = z.object({
+  preferredAudioLanguage: z.enum(['pt-BR', 'pt-PT', 'en', 'auto']),
+});
 
 const apiSettingsSchema = z.object({
   openSubtitlesApiKey: z.string().trim().max(500).optional(),
@@ -17,6 +22,38 @@ const apiKeySource = (userValue?: string | null, environmentValue?: string) =>
 
 export const settingsRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.addHook('preHandler', fastify.authenticate);
+
+  fastify.get('/playback', async (request, reply) => {
+    const user = await fastify.prisma.user.findUnique({
+      where: { id: request.user!.id },
+      select: { preferredAudioLanguage: true },
+    });
+    return reply.status(200).send({
+      preferredAudioLanguage: user?.preferredAudioLanguage || 'pt-BR',
+    });
+  });
+
+  fastify.put('/playback', async (request, reply) => {
+    const parsed = playbackSettingsSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Playback settings are invalid.',
+          requestId: request.id,
+          details: parsed.error.format(),
+        },
+      });
+    }
+
+    const preferredAudioLanguage: PreferredAudioLanguage = parsed.data.preferredAudioLanguage;
+    const user = await fastify.prisma.user.update({
+      where: { id: request.user!.id },
+      data: { preferredAudioLanguage },
+      select: { preferredAudioLanguage: true },
+    });
+    return reply.status(200).send(user);
+  });
 
   const serializeApiSettings = (user: {
     opensubtitlesApiKey: string | null;

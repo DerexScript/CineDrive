@@ -1,5 +1,14 @@
 import type React from 'react';
-import { Database, FolderTree, HardDrive, Info, KeyRound, Palette, User } from 'lucide-react';
+import {
+  Database,
+  FolderTree,
+  HardDrive,
+  Info,
+  KeyRound,
+  Languages,
+  Palette,
+  User,
+} from 'lucide-react';
 import { t } from '../../i18n';
 
 /**
@@ -12,7 +21,7 @@ import { t } from '../../i18n';
  * compensate for that; it is now a shortcut rather than the only way through.
  */
 export type SettingsPane =
-  'profile' | 'appearance' | 'about' | 'libraries' | 'api' | 'manage' | 'storage';
+  'profile' | 'appearance' | 'playback' | 'about' | 'libraries' | 'api' | 'manage' | 'storage';
 
 export interface SettingsPaneDefinition {
   id: SettingsPane;
@@ -37,6 +46,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     label: t.settings.groups.interface,
     panes: [
       { id: 'appearance', label: t.settings.search.appearance.label, icon: Palette },
+      { id: 'playback', label: t.settings.search.audioPlayback.label, icon: Languages },
       { id: 'about', label: t.settings.search.about.label, icon: Info },
     ],
   },
@@ -101,6 +111,7 @@ export const SETTINGS_SEARCH_ITEMS: SettingsSearchItem[] = [
   { ...t.settings.search.profile, pane: 'profile' },
   { ...t.settings.search.security, pane: 'profile' },
   { ...t.settings.search.appearance, pane: 'appearance' },
+  { ...t.settings.search.audioPlayback, pane: 'playback' },
   { ...t.settings.search.language, pane: 'appearance' },
   { ...t.settings.search.librarySources, pane: 'libraries' },
   { ...t.settings.search.apiManagement, pane: 'api' },

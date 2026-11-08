@@ -1044,6 +1044,18 @@ export const en: Translations = {
       heading: 'Playback speed',
     },
 
+    audioTracks: {
+      heading: 'Audio track',
+      usePreferred: 'Use preferred language',
+      defaultTrack: 'Default track',
+      unknownLanguage: 'Unknown language',
+      portuguese: 'Portuguese',
+      english: 'English',
+      spanish: 'Spanish',
+      japanese: 'Japanese',
+      switching: 'Changing audio track',
+    },
+
     preview: {
       loading: 'Preparing preview…',
       unavailable: 'No preview',
@@ -1066,9 +1078,12 @@ export const en: Translations = {
       bufferTitle: 'Downloaded playback buffer',
       bufferReady: (seconds: number) => `${seconds}s ready`,
       subtitleMenu: 'Subtitle menu',
+      audioMenu: 'Audio tracks',
       transcodeToggle: 'Audio / Safari compatibility mode',
       transcodeActive: 'Audio compatibility mode (AAC transcode) is on',
       transcodeEnable: 'Turn on audio / Safari compatibility mode (AAC)',
+      transcodeRequiredForAudio:
+        'Compatibility mode is needed to keep the selected audio language.',
       qualityMenu: 'Video quality',
       qualityTitle: (value: string) => `Video quality: ${value}`,
       qualityAutoValue: (effective: string) => `Automatic (${effective})`,
@@ -1316,6 +1331,24 @@ export const en: Translations = {
       tooShort: (minLength: number) => `The new password must be at least ${minLength} characters.`,
       mismatch: 'The new password and its confirmation do not match.',
       changeFailed: 'An error occurred while changing your password.',
+    },
+
+    audioPlayback: {
+      title: 'Audio playback',
+      description:
+        'Choose which language CineDrive should select when a media file has multiple audio tracks.',
+      preferredLanguage: 'Preferred audio language',
+      hint: 'CineDrive selects this language when available. You can still choose another track from the player.',
+      save: 'Save settings',
+      saving: 'Saving…',
+      saved: 'Your preferred audio language has been saved.',
+      saveFailed: 'The audio playback setting could not be saved.',
+      options: {
+        ptBR: 'Portuguese (Brazil)',
+        ptPT: 'Portuguese (Portugal)',
+        en: 'English',
+        auto: 'Use the file default track',
+      },
     },
 
     users: {
@@ -1679,6 +1712,10 @@ export const en: Translations = {
       appearance: {
         label: 'Appearance & language',
         description: 'Theme and interface language settings',
+      },
+      audioPlayback: {
+        label: 'Audio playback',
+        description: 'Preferred audio language and track selection',
       },
       language: { label: 'Language', description: 'Change the interface language' },
       visibility: { label: 'Library visibility', description: 'Manage the metadata filter' },

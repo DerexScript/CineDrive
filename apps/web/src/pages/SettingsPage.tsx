@@ -6,6 +6,7 @@ import { InterfaceSection } from './settings/sections/InterfaceSection';
 import { LibrarySourcesSection } from './settings/sections/LibrarySourcesSection';
 import { ApiManagementSection } from './settings/sections/ApiManagementSection';
 import { AboutSection } from './settings/sections/AboutSection';
+import { AudioPlaybackSection } from './settings/sections/AudioPlaybackSection';
 import { intlLocale, t } from '../i18n';
 import {
   SETTINGS_GROUPS,
@@ -35,6 +36,7 @@ const SettingsToolFallback: React.FC = () => (
 const PANE_CONTENT: Record<SettingsPane, React.ReactNode> = {
   profile: <AccountSection />,
   appearance: <InterfaceSection />,
+  playback: <AudioPlaybackSection />,
   about: <AboutSection />,
   libraries: <LibrarySourcesSection />,
   api: <ApiManagementSection />,

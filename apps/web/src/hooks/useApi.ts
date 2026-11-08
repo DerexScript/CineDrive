@@ -674,9 +674,8 @@ export function useUpdateSeriesNoteMutation() {
       queryClient.setQueryData<MediaItemType>(['mediaDetail', variables.id], (old) =>
         old ? { ...old, personalNote } : old,
       );
-      queryClient.setQueryData<MediaDetailType>(
-        ['mediaDetail', variables.id, 'summary'],
-        (old) => (old ? { ...old, personalNote } : old),
+      queryClient.setQueryData<MediaDetailType>(['mediaDetail', variables.id, 'summary'], (old) =>
+        old ? { ...old, personalNote } : old,
       );
     },
   });
@@ -1090,6 +1089,62 @@ export interface OpenSubtitlesSettingsDto {
   username: string;
   preferredLanguages: string;
   hasApiKey: boolean;
+}
+
+export type PreferredAudioLanguage = 'pt-BR' | 'pt-PT' | 'en' | 'auto';
+
+export interface PlaybackSettingsDto {
+  preferredAudioLanguage: PreferredAudioLanguage;
+}
+
+export interface AudioTrackDto {
+  streamIndex: number;
+  language: string | null;
+  title: string | null;
+  codec: string;
+  channelLayout: string | null;
+  isDefault: boolean;
+}
+
+export interface AudioTrackCatalogDto {
+  tracks: AudioTrackDto[];
+  preferredLanguage: PreferredAudioLanguage;
+  recommendedStreamIndex: number | null;
+}
+
+export function usePlaybackSettingsQuery() {
+  return useQuery({
+    queryKey: ['playbackSettings'],
+    queryFn: async ({ signal }) =>
+      (await apiClient.get<PlaybackSettingsDto>('/settings/playback', { signal })).data,
+  });
+}
+
+export function useUpdatePlaybackSettingsMutation() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: PlaybackSettingsDto) =>
+      (await apiClient.put<PlaybackSettingsDto>('/settings/playback', data)).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['playbackSettings'] });
+      queryClient.invalidateQueries({ queryKey: ['audioTracks'] });
+    },
+  });
+}
+
+export function useAudioTrackCatalogQuery(driveFileId: string | null) {
+  return useQuery({
+    queryKey: ['audioTracks', driveFileId],
+    enabled: Boolean(driveFileId),
+    retry: false,
+    queryFn: async ({ signal }) =>
+      (
+        await apiClient.get<AudioTrackCatalogDto>(
+          `/media/${encodeURIComponent(driveFileId!)}/audio-tracks`,
+          { signal },
+        )
+      ).data,
+  });
 }
 
 export type ApiKeySource = 'user' | 'environment' | 'none';

@@ -17,6 +17,7 @@ import { usePlayerControls } from '../hooks/usePlayerControls';
 import { useHlsPlayback } from '../hooks/useHlsPlayback';
 import { useActiveMedia } from '../hooks/useActiveMedia';
 import { usePlaybackSource } from '../hooks/usePlaybackSource';
+import { useAudioTrackCatalogQuery } from '../../../hooks/useApi';
 import { useSubtitleTracks } from '../hooks/useSubtitleTracks';
 import { usePlayerTelemetry } from '../hooks/usePlayerTelemetry';
 import { useResettableState } from '../../../hooks/useResettableState';
@@ -86,6 +87,13 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
     sourceHeight: active.analyzedHeight,
   });
   const { dispatch: dispatchSource, timelineOffset, useTranscode } = source;
+  const { data: audioTrackCatalog } = useAudioTrackCatalogQuery(active.driveFileId);
+  const audioTracks = audioTrackCatalog?.tracks || [];
+  const activeAudioTrack = audioTracks.find(
+    (track) =>
+      track.streamIndex ===
+      (source.selectedAudioTrackIndex ?? audioTrackCatalog?.recommendedStreamIndex),
+  );
 
   // --- Timers and cross-render bookkeeping -------------------------------
   const audioCompatibilityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -217,6 +225,7 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
     clearTimer(pendingSeekTimerRef);
     dispatchSource({
       type: 'reset',
+      driveFileId: active.driveFileId,
       playbackMode: recommendedMode,
       adaptiveQuality: source.automaticQuality,
     });
@@ -1103,6 +1112,28 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
     dispatchSource({ type: 'setMode', playbackMode: 'direct', offsetSeconds: 0 });
   };
 
+  const handleSelectAudioTrack = (streamIndex: number | null) => {
+    const video = videoRef.current;
+    const preferredStreamIndex = audioTrackCatalog?.recommendedStreamIndex ?? null;
+    const nextStreamIndex = streamIndex ?? preferredStreamIndex;
+    const currentStreamIndex = source.selectedAudioTrackIndex ?? preferredStreamIndex;
+    if (
+      streamIndex === source.selectedAudioTrackIndex ||
+      (streamIndex === null && source.selectedAudioTrackIndex === null) ||
+      (streamIndex !== null && nextStreamIndex === currentStreamIndex)
+    ) {
+      return;
+    }
+
+    const nextMode = source.playbackMode === 'direct' ? recommendedMode : source.playbackMode;
+    suppressNextEpisode();
+    resumeAfterSourceChangeRef.current =
+      isPlaying || Boolean(video && !video.paused) ? nextMode : null;
+    setIsBuffering(true);
+    setConnectionMessage(t.player.audioTracks.switching);
+    source.selectAudioTrack(streamIndex, Math.floor(currentTime), nextMode);
+  };
+
   const cueStyle = useMemo(
     () => `
     ::cue {
@@ -1321,6 +1352,15 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
           volume={volume}
           isMuted={isMuted}
           playbackSpeed={playbackSpeed}
+          audioTracks={audioTracks}
+          preferredAudioLanguage={audioTrackCatalog?.preferredLanguage || 'pt-BR'}
+          recommendedAudioTrackIndex={audioTrackCatalog?.recommendedStreamIndex ?? null}
+          selectedAudioTrackIndex={source.selectedAudioTrackIndex}
+          canDisableCompatibilityMode={
+            audioTrackCatalog
+              ? audioTracks.length <= 1 || activeAudioTrack?.isDefault === true
+              : false
+          }
           subtitles={resolvedSubtitles}
           activeSubtitleId={activeSubtitleId}
           hasPreviousEpisode={!!active.previousEpisode}
@@ -1345,6 +1385,7 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
             if (videoRef.current) videoRef.current.playbackRate = speed;
           }}
           onSelectSubtitle={selectSubtitle}
+          onSelectAudioTrack={handleSelectAudioTrack}
           onUploadCustomSubtitle={subtitles.uploadCustomSubtitle}
           onSelectOpenSubtitle={handleSelectOpenSubtitle}
           onTogglePiP={togglePiP}

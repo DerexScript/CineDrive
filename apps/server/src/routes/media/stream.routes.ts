@@ -4,6 +4,12 @@ import type { TranscodeQuality } from '../../services/transcode.service.js';
 import { resolveSafeLocalFile } from '../../services/local-folder-validation.js';
 import { resolveRangeRequest } from '../../utils/http-range.js';
 import { ownedLibraryFilter } from '../../utils/library-access.js';
+import {
+  getAudioTrackCatalog,
+  getPreferredAudioLanguage,
+  parseAudioTrackRequest,
+  resolveAudioTrackRequest,
+} from '../../services/audio-track-catalog.service.js';
 import { driveSourceInput, parseHlsSession } from './shared.js';
 
 /** Byte-range and on-the-fly transcode delivery. */
@@ -221,6 +227,51 @@ export const mediaStreamRoutes: FastifyPluginAsync = async (fastify) => {
     // A restarted stream must decode from the exact requested timestamp.
     // Copying H.264 would begin at an earlier keyframe and desynchronize audio.
     const shouldTranscodeVideo = transcodeMode === 'full' || startSeconds > 0;
+    const requestedAudioTrack = parseAudioTrackRequest(
+      (request.query as Record<string, string>)?.audioTrackIndex,
+    );
+    if (
+      !requestedAudioTrack.valid ||
+      (!isTranscode && requestedAudioTrack.streamIndex !== undefined)
+    ) {
+      cleanupListeners();
+      return reply.status(400).send({
+        error: {
+          code: 'INVALID_AUDIO_TRACK',
+          message: 'Invalid audio track selection.',
+          requestId: request.id,
+        },
+      });
+    }
+
+    let audioTrackIndex: number | undefined;
+    if (isTranscode) {
+      try {
+        const tracks = await getAudioTrackCatalog(fastify, driveFile, userId, safeLocalFilePath);
+        const preferredLanguage = await getPreferredAudioLanguage(fastify, userId);
+        const selectedTrack = resolveAudioTrackRequest(
+          tracks,
+          requestedAudioTrack.streamIndex,
+          preferredLanguage,
+        );
+        audioTrackIndex = selectedTrack?.streamIndex;
+      } catch (error) {
+        if (requestedAudioTrack.streamIndex !== undefined) {
+          cleanupListeners();
+          return reply.status(503).send({
+            error: {
+              code: 'AUDIO_TRACK_SELECTION_FAILED',
+              message: 'The selected audio track is unavailable for this file.',
+              requestId: request.id,
+            },
+          });
+        }
+        request.log.warn(
+          { error, driveFileId: driveFile.id },
+          'Using FFmpeg default audio selection',
+        );
+      }
+    }
 
     // 5. Handle Local File Streaming (Direct Disk Stream)
     if (safeLocalFilePath) {
@@ -247,6 +298,7 @@ export const mediaStreamRoutes: FastifyPluginAsync = async (fastify) => {
             transcodeVideo: shouldTranscodeVideo,
             quality: transcodeQuality,
             startSeconds,
+            audioTrackIndex,
             ownerUserId: userId,
             ...(ownerSessionId ? { ownerSessionId } : {}),
           },
@@ -347,6 +399,7 @@ export const mediaStreamRoutes: FastifyPluginAsync = async (fastify) => {
             transcodeVideo: shouldTranscodeVideo,
             quality: transcodeQuality,
             startSeconds,
+            audioTrackIndex,
             inputOptions: source.inputOptions,
             ownerUserId: userId,
             ...(ownerSessionId ? { ownerSessionId } : {}),
@@ -475,7 +528,6 @@ export const mediaStreamRoutes: FastifyPluginAsync = async (fastify) => {
     const stopped = fastify.transcodeService.releaseOwner(sessionId, request.user!.id);
     return reply.status(200).send({ stopped });
   });
-
 
   fastify.get<{ Params: { driveFileId: string } }>(
     '/:driveFileId/stream',

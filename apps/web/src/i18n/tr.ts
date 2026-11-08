@@ -1046,6 +1046,18 @@ export const tr = {
       heading: 'Oynatma Hızı',
     },
 
+    audioTracks: {
+      heading: 'Ses Parçası',
+      usePreferred: 'Tercih edilen dili kullan',
+      defaultTrack: 'Varsayılan parça',
+      unknownLanguage: 'Bilinmeyen dil',
+      portuguese: 'Portekizce',
+      english: 'İngilizce',
+      spanish: 'İspanyolca',
+      japanese: 'Japonca',
+      switching: 'Ses parçası değiştiriliyor',
+    },
+
     preview: {
       loading: 'Önizleme hazırlanıyor…',
       unavailable: 'Önizleme yok',
@@ -1068,9 +1080,11 @@ export const tr = {
       bufferTitle: 'İndirilen ileri oynatma tamponu',
       bufferReady: (seconds: number) => `${seconds} sn hazır`,
       subtitleMenu: 'Altyazı Menüsü',
+      audioMenu: 'Ses Parçaları',
       transcodeToggle: 'Ses / Safari Uyum Modu',
       transcodeActive: 'Ses Uyum Modu (AAC Transcode) Aktif',
       transcodeEnable: 'Ses / Safari Uyum Modunu Etkinleştir (AAC)',
+      transcodeRequiredForAudio: 'Seçilen ses dilini korumak için uyumluluk modu gerekli.',
       qualityMenu: 'Görüntü Kalitesi',
       qualityTitle: (value: string) => `Görüntü kalitesi: ${value}`,
       qualityAutoValue: (effective: string) => `Otomatik (${effective})`,
@@ -1318,6 +1332,24 @@ export const tr = {
       tooShort: (minLength: number) => `Yeni şifre en az ${minLength} karakter olmalıdır.`,
       mismatch: 'Yeni şifre ile şifre tekrarı uyuşmuyor.',
       changeFailed: 'Şifre değiştirilirken bir hata oluştu.',
+    },
+
+    audioPlayback: {
+      title: 'Sesli Oynatma',
+      description:
+        'Bir medya dosyasında birden fazla ses parçası varsa CineDrive’ın seçeceği dili belirleyin.',
+      preferredLanguage: 'Tercih edilen ses dili',
+      hint: 'CineDrive bu dil mevcut olduğunda onu seçer. Oynatıcıdan başka bir parça da seçebilirsiniz.',
+      save: 'Ayarları Kaydet',
+      saving: 'Kaydediliyor…',
+      saved: 'Tercih edilen ses dili kaydedildi.',
+      saveFailed: 'Ses oynatma ayarı kaydedilemedi.',
+      options: {
+        ptBR: 'Portekizce (Brezilya)',
+        ptPT: 'Portekizce (Portekiz)',
+        en: 'İngilizce',
+        auto: 'Dosyanın varsayılan parçasını kullan',
+      },
     },
 
     users: {
@@ -1687,6 +1719,10 @@ export const tr = {
       appearance: {
         label: 'Görünüm ve Dil',
         description: 'Tema ve arayüz dili ayarları',
+      },
+      audioPlayback: {
+        label: 'Sesli Oynatma',
+        description: 'Tercih edilen ses dili ve parça seçimi',
       },
       language: { label: 'Dil', description: 'Arayüz dilini değiştirin' },
       visibility: { label: 'Kütüphane Görünürlüğü', description: 'Metadata filtresini yönetin' },

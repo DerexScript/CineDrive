@@ -66,6 +66,7 @@ export class TranscodeService {
       ownerUserId?: string;
       inputOptions?: string[];
       audioOnly?: boolean;
+      audioTrackIndex?: number;
       realtime?: boolean;
     } = {},
     onAbort?: (killFn: () => void) => void,
@@ -124,6 +125,10 @@ export class TranscodeService {
           ...scaleOptions,
         ]
       : ['-c:v copy'];
+    const explicitStreamMap =
+      options.audioTrackIndex === undefined
+        ? []
+        : ['-map 0:v:0?', `-map 0:${options.audioTrackIndex}`];
 
     let closed = false;
     let idleTimer: NodeJS.Timeout | undefined;
@@ -159,6 +164,7 @@ export class TranscodeService {
     const command = ffmpeg(input)
       .inputOptions(inputOptions)
       .outputOptions([
+        ...explicitStreamMap,
         ...videoOptions,
         '-c:a aac',
         `-b:a ${options.audioOnly ? '192k' : '128k'}`,

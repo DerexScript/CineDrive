@@ -114,6 +114,7 @@ export class HlsService {
     sourceVideoCodec?: string | null,
     signal?: AbortSignal,
     ownerUserId?: string,
+    audioTrackIndex?: number | null,
   ) {
     if (signal?.aborted) throw new Error('HLS_CLIENT_ABORTED');
 
@@ -136,6 +137,7 @@ export class HlsService {
       sourceVideoCodec,
       signal,
       ownerUserId,
+      audioTrackIndex,
     );
     this.inflightStarts.set(cacheKey, start);
     try {
@@ -157,6 +159,7 @@ export class HlsService {
     sourceVideoCodec: string | null | undefined,
     signal?: AbortSignal,
     ownerUserId?: string,
+    audioTrackIndex?: number | null,
   ) {
     if (sessionId && this.isSessionBlocked(cacheKey, sessionId)) {
       throw new Error('HLS_JOB_STOPPED');
@@ -245,6 +248,7 @@ export class HlsService {
         familyKey,
         mediaName,
         videoCodec: await resolveVideoCodec(input, sourceVideoCodec),
+        audioTrackIndex,
       });
       this.jobs.set(cacheKey, job);
       this.scheduler.consume(reservationId);
@@ -290,9 +294,18 @@ export class HlsService {
     familyKey: string;
     mediaName: string;
     videoCodec: string;
+    audioTrackIndex: number | null | undefined;
   }): HlsJob {
-    const { cacheKey, outputDir, playlistPath, startSeconds, familyKey, mediaName, videoCodec } =
-      options;
+    const {
+      cacheKey,
+      outputDir,
+      playlistPath,
+      startSeconds,
+      familyKey,
+      mediaName,
+      videoCodec,
+      audioTrackIndex,
+    } = options;
 
     const command = buildHlsCommand({
       input: options.input,
@@ -300,6 +313,7 @@ export class HlsService {
       playlistPath,
       startSeconds,
       videoCodec,
+      audioTrackIndex,
     });
     const jobId = crypto.randomUUID();
     const startedAt = Date.now();
@@ -520,6 +534,18 @@ export class HlsService {
 
     this.teardownJob(cacheKey, job, { leaseAlreadyCleared: true });
     return true;
+  }
+
+  /** Release the one cache lease this player owns, regardless of its audio map. */
+  public releaseHlsForFile(fileId: string, sessionId: string, userId?: string) {
+    assertValidSessionId(sessionId);
+    const prefix = `${fileId}-`;
+    let stopped = false;
+    for (const [cacheKey, sessions] of this.leases) {
+      if (!cacheKey.startsWith(prefix) || !sessions.has(sessionId)) continue;
+      stopped = this.releaseHls(cacheKey, sessionId, userId) || stopped;
+    }
+    return stopped;
   }
 
   public enforceCacheQuota(protectedCacheKey?: string) {

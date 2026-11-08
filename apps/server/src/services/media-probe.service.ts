@@ -22,6 +22,15 @@ export interface MediaTechnicalMetadata {
   mediaAnalysisError: null;
 }
 
+export interface AudioTrackMetadata {
+  streamIndex: number;
+  language: string | null;
+  title: string | null;
+  codec: string;
+  channelLayout: string | null;
+  isDefault: boolean;
+}
+
 const PROBE_TIMEOUT_MS = 15_000;
 const REMOTE_HEAD_BYTES = 8 * 1024 * 1024;
 const REMOTE_TAIL_BYTES = 4 * 1024 * 1024;
@@ -70,7 +79,48 @@ export class MediaProbeService {
     }
   }
 
-  private async runProbe(inputPath: string): Promise<string> {
+  public async probeLocalAudioTracks(inputPath: string): Promise<AudioTrackMetadata[]> {
+    return this.parseAudioTracks(await this.runProbe(inputPath, 4 * 1024 * 1024));
+  }
+
+  public async probeRemoteAudioTracks(options: {
+    name: string;
+    size: bigint;
+    readRange: (start: number, end: number) => Promise<Buffer>;
+  }): Promise<AudioTrackMetadata[]> {
+    if (options.size <= 0n || options.size > BigInt(Number.MAX_SAFE_INTEGER)) {
+      throw new Error('INVALID_REMOTE_MEDIA_SIZE');
+    }
+
+    const size = Number(options.size);
+    const tempDirectory = await mkdtemp(path.join(os.tmpdir(), 'cinedrive-audio-probe-'));
+    const extension = path.extname(options.name).toLowerCase();
+    const tempPath = path.join(tempDirectory, `media${extension}`);
+
+    try {
+      const file = await open(tempPath, 'w');
+      try {
+        await file.truncate(size);
+        const headEnd = Math.min(size, REMOTE_HEAD_BYTES) - 1;
+        const head = await options.readRange(0, headEnd);
+        await file.write(head, 0, head.length, 0);
+
+        if (size > REMOTE_HEAD_BYTES) {
+          const tailStart = Math.max(REMOTE_HEAD_BYTES, size - REMOTE_TAIL_BYTES);
+          const tail = await options.readRange(tailStart, size - 1);
+          await file.write(tail, 0, tail.length, tailStart);
+        }
+      } finally {
+        await file.close();
+      }
+
+      return this.parseAudioTracks(await this.runProbe(tempPath, 4 * 1024 * 1024));
+    } finally {
+      await rm(tempDirectory, { recursive: true, force: true });
+    }
+  }
+
+  private async runProbe(inputPath: string, maxBuffer = 1024 * 1024): Promise<string> {
     if (!ffmpegPath) throw new Error('FFMPEG_NOT_AVAILABLE');
     const binaryPath = ffmpegPath;
 
@@ -91,7 +141,7 @@ export class MediaProbeService {
           'null',
           '-',
         ],
-        { timeout: PROBE_TIMEOUT_MS, maxBuffer: 1024 * 1024 },
+        { timeout: PROBE_TIMEOUT_MS, maxBuffer },
         (error, _stdout, output) => {
           // FFmpeg may exit non-zero after probing malformed media; its stderr
           // is still useful as long as stream metadata was emitted.
@@ -103,6 +153,101 @@ export class MediaProbeService {
         },
       );
     });
+  }
+
+  private parseAudioTracks(stderr: string): AudioTrackMetadata[] {
+    // FFmpeg prints every input stream before "Stream mapping". Do not parse
+    // the output streams that follow: their indexes and codecs may differ.
+    const inputInfo = stderr.split(/\r?\nStream mapping:/i, 1)[0] || '';
+    const lines = inputInfo.split(/\r?\n/);
+    const tracks: AudioTrackMetadata[] = [];
+    let current: AudioTrackMetadata | undefined;
+
+    const finishCurrent = () => {
+      if (current) tracks.push(current);
+      current = undefined;
+    };
+
+    for (const line of lines) {
+      const streamLine = line.match(/^\s*Stream #\d+:(\d+)(?:\(([^)]+)\))?: Audio:\s*([^,\s(]+)/i);
+      if (streamLine) {
+        finishCurrent();
+        const language = this.normalizeAudioLanguage(streamLine[2]);
+        current = {
+          streamIndex: Number.parseInt(streamLine[1]!, 10),
+          language,
+          title: null,
+          codec: streamLine[3]!.toLowerCase(),
+          channelLayout:
+            line.match(/,\s*(mono|stereo|\d\.\d(?:\([^)]+\))?)(?:,|\s|$)/i)?.[1] || null,
+          isDefault: /\(default\)/i.test(line),
+        };
+        continue;
+      }
+
+      if (!current) continue;
+      const title = line.match(/^\s*title\s*:\s*(.+?)\s*$/i)?.[1];
+      if (title) {
+        current.title = title;
+        if (!current.language) {
+          current.language = this.inferAudioLanguageFromTitle(title);
+        }
+      }
+    }
+
+    finishCurrent();
+    return tracks;
+  }
+
+  private normalizeAudioLanguage(value?: string): string | null {
+    const normalized = value?.trim().replace(/_/g, '-').toLowerCase();
+    if (!normalized || normalized === 'und' || normalized === 'unknown') return null;
+    const aliases: Record<string, string> = {
+      por: 'pt',
+      pt: 'pt',
+      eng: 'en',
+      en: 'en',
+      spa: 'es',
+      es: 'es',
+      fra: 'fr',
+      fre: 'fr',
+      fr: 'fr',
+      deu: 'de',
+      ger: 'de',
+      de: 'de',
+      ita: 'it',
+      it: 'it',
+      jpn: 'ja',
+      ja: 'ja',
+      kor: 'ko',
+      ko: 'ko',
+      tur: 'tr',
+      tr: 'tr',
+      rus: 'ru',
+      ru: 'ru',
+      zho: 'zh',
+      chi: 'zh',
+      zh: 'zh',
+    };
+    if (normalized === 'pt-br' || normalized === 'pt-pt') {
+      return normalized === 'pt-br' ? 'pt-BR' : 'pt-PT';
+    }
+    return aliases[normalized] || normalized;
+  }
+
+  private inferAudioLanguageFromTitle(title: string): string | null {
+    const normalized = title
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+    if (/portugues\s*(\(\s*brasil\s*\)|brasil|brasileir|pt[-_ ]?br)/.test(normalized)) {
+      return 'pt-BR';
+    }
+    if (/portugues|portuguese|\bpt[-_ ]?pt\b/.test(normalized)) return 'pt';
+    if (/ingles|english|\beng\b/.test(normalized)) return 'en';
+    if (/espanhol|spanish|\bes\b/.test(normalized)) return 'es';
+    if (/frances|french|\bfr\b/.test(normalized)) return 'fr';
+    return null;
   }
 
   private parseProbeOutput(stderr: string, inputPath: string): MediaTechnicalMetadata {
