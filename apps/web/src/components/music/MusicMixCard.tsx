@@ -32,7 +32,7 @@ import {
   Zap,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { t } from '../../i18n';
+import { intlLocale, t } from '../../i18n';
 
 const gradients: Record<string, string> = {
   violet: 'from-violet-950 via-violet-700 to-fuchsia-400',
@@ -56,7 +56,7 @@ const moodVisuals: Record<string, { icon: LucideIcon; color: string }> = {
 
 const collectionVisual = (mix: MusicMixDto) => {
   if (mix.type === 'mood') return moodVisuals[mix.id.replace('mood-', '')] || moodVisuals.focus!;
-  const key = `${mix.id} ${mix.title}`.toLocaleLowerCase('tr-TR');
+  const key = `${mix.id} ${mix.title}`.toLocaleLowerCase(intlLocale);
   if (key.includes('rock') || key.includes('metal')) return { icon: Guitar, color: 'text-red-300' };
   if (key.includes('pop')) return { icon: Mic2, color: 'text-pink-300' };
   if (key.includes('alternatif') || key.includes('alternative') || key.includes('indie'))

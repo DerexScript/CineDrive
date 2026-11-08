@@ -21,7 +21,7 @@ import type { LucideIcon } from 'lucide-react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Modal } from '../common/Modal';
 import { useCreateMusicPlaylistMutation, useMusicPlaylistsQuery } from '../../hooks/useMusicApi';
-import { t } from '../../i18n';
+import { intlLocale, t } from '../../i18n';
 import { toast } from '../../stores/useToastStore';
 import { useUiStore } from '../../stores/useUiStore';
 
@@ -109,7 +109,7 @@ export const MusicSidebar: React.FC = () => {
   const playlists = useMemo(
     () =>
       [...(playlistsQuery.data || [])].sort((left, right) => {
-        const comparison = left.name.localeCompare(right.name, undefined, { sensitivity: 'base' });
+        const comparison = left.name.localeCompare(right.name, intlLocale, { sensitivity: 'base' });
         return sortAscending ? comparison : -comparison;
       }),
     [playlistsQuery.data, sortAscending],

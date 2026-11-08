@@ -1,5 +1,5 @@
 import type { SystemMetricPointDto } from '@cinedrive/shared';
-import { locale } from '../i18n';
+import { intlLocale } from '../i18n';
 
 export interface DailyBandwidth {
   key: string;
@@ -12,7 +12,7 @@ export const buildDailyBandwidth = (
   history: SystemMetricPointDto[],
   now = new Date(),
 ): DailyBandwidth[] => {
-  const formatter = new Intl.DateTimeFormat(locale, { weekday: 'short' });
+  const formatter = new Intl.DateTimeFormat(intlLocale, { weekday: 'short' });
   const days = Array.from({ length: 7 }, (_, index) => {
     const date = new Date(now);
     date.setHours(0, 0, 0, 0);

@@ -18,13 +18,13 @@ import { MusicTrackList } from '../components/music/MusicTrackList';
 import { ErrorState } from '../components/common/ErrorState';
 import { useMusicPlayer } from '../features/music/MusicPlayerProvider';
 import { useMusicReplayQuery } from '../hooks/useMusicApi';
-import { t } from '../i18n';
+import { intlLocale, t } from '../i18n';
 
 type ReplayPeriod = 'day' | 'week' | 'month' | 'year';
 
 const panelClass = 'rounded-2xl border border-white/[0.07] bg-white/[0.025]';
 
-const getLocale = () => (document.documentElement.lang === 'en' ? 'en-US' : 'tr-TR');
+const getLocale = () => intlLocale;
 
 const formatDuration = (seconds: number) => {
   const hours = Math.floor(seconds / 3600);

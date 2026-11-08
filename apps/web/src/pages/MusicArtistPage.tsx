@@ -9,7 +9,7 @@ import { useArtworkPalette } from '../features/music/useArtworkPalette';
 import { useMusicPlayer } from '../features/music/MusicPlayerProvider';
 import { rankArtistTracks } from '../features/music/artistPopularity';
 import { useArtistRadioMutation, useMusicArtistQuery } from '../hooks/useMusicApi';
-import { t } from '../i18n';
+import { intlLocale, t } from '../i18n';
 
 const albumSection = (album: { releaseType?: string; secondaryTypes?: string[] }) => {
   if (album.secondaryTypes?.includes('compilation')) return 'compilation';
@@ -31,10 +31,10 @@ export const MusicArtistPage: React.FC = () => {
   const allTracks = [...artist.tracks].sort(
     (left, right) =>
       (right.year || 0) - (left.year || 0) ||
-      (left.album?.title || '').localeCompare(right.album?.title || '') ||
+      (left.album?.title || '').localeCompare(right.album?.title || '', intlLocale) ||
       left.discNumber - right.discNumber ||
       left.trackNumber - right.trackNumber ||
-      left.title.localeCompare(right.title),
+      left.title.localeCompare(right.title, intlLocale),
   );
   const popularTracks = rankArtistTracks(artist.tracks);
   const totalPlays = artist.tracks.reduce((total, track) => total + (track.playCount || 0), 0);
@@ -89,7 +89,7 @@ export const MusicArtistPage: React.FC = () => {
             </h1>
             <p className="mt-4 text-sm text-white/50">
               {t.music.trackCount(artist.tracks.length)} · {artist.albums.length}{' '}
-              {t.music.albums.toLocaleLowerCase()}
+              {t.music.albums.toLocaleLowerCase(intlLocale)}
             </p>
             <div className="mt-6 flex max-w-full flex-wrap items-center justify-center gap-2.5 sm:mt-7 sm:gap-3 sm:justify-start">
               <button

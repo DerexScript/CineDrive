@@ -44,7 +44,7 @@ import {
   useScanArtistArtworkMutation,
   useUndoMusicMaintenanceMutation,
 } from '../hooks/useMusicApi';
-import { t } from '../i18n';
+import { intlLocale, t } from '../i18n';
 import { toast } from '../stores/useToastStore';
 
 type MaintenanceTab = 'overview' | 'artwork' | 'metadata' | 'audio' | 'activity';
@@ -340,11 +340,11 @@ export const MusicMaintenancePage: React.FC = () => {
     return [...unique.values()];
   }, [data?.acousticDuplicates, data?.duplicates]);
   const filteredArtists = useMemo(() => {
-    const normalizedQuery = artistQuery.trim().toLocaleLowerCase('tr-TR');
+    const normalizedQuery = artistQuery.trim().toLocaleLowerCase(intlLocale);
     return artists.filter(
       (artist) =>
         (artistScope === 'all' || !artist.artworkUrl) &&
-        (!normalizedQuery || artist.name.toLocaleLowerCase('tr-TR').includes(normalizedQuery)),
+        (!normalizedQuery || artist.name.toLocaleLowerCase(intlLocale).includes(normalizedQuery)),
     );
   }, [artistQuery, artistScope, artists]);
 
@@ -1446,7 +1446,7 @@ export const MusicMaintenancePage: React.FC = () => {
                           ] || action.actionType}
                         </p>
                         <p className="mt-0.5 text-[10px] text-zinc-600">
-                          {new Date(action.createdAt).toLocaleString()}
+                          {new Date(action.createdAt).toLocaleString(intlLocale)}
                         </p>
                       </div>
                       {action.revertedAt ? (

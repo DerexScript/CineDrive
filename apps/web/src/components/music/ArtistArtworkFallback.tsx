@@ -1,4 +1,5 @@
 import React from 'react';
+import { intlLocale } from '../../i18n';
 
 interface Props {
   name: string;
@@ -14,7 +15,7 @@ const initialsFor = (name: string) => {
   if (!words.length) return '♪';
   const initials =
     words.length === 1 ? words[0]![0]! : `${words[0]![0]!}${words.at(-1)![0]!}`;
-  return initials.toLocaleUpperCase('tr-TR');
+  return initials.toLocaleUpperCase(intlLocale);
 };
 
 export const ArtistArtworkFallback: React.FC<Props> = ({ name, compact, className = '' }) => {
