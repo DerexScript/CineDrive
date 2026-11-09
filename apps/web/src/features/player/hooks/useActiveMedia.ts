@@ -32,10 +32,12 @@ export interface ActiveMedia {
 const isPositiveFiniteDuration = (duration: number | null | undefined): duration is number =>
   typeof duration === 'number' && Number.isFinite(duration) && duration > 0;
 
-const resolveEpisodeDuration = (episode: EpisodeType): number | undefined => {
-  const analyzedDuration = episode.technicalMetadata?.mediaDuration;
+const resolveMediaDuration = (
+  analyzedDuration: number | null | undefined,
+  storedDuration: number | null | undefined,
+): number | undefined => {
   if (isPositiveFiniteDuration(analyzedDuration)) return analyzedDuration;
-  return isPositiveFiniteDuration(episode.duration) ? episode.duration : undefined;
+  return isPositiveFiniteDuration(storedDuration) ? storedDuration : undefined;
 };
 
 const formatEpisodeTitle = (mediaTitle: string, episode: EpisodeType) => {
@@ -73,7 +75,10 @@ export const useActiveMedia = (media: MediaItemType, episodeId?: string): Active
         ...base,
         driveFileId: media.movie.driveFileId,
         playbackPlan: media.movie.playbackPlan,
-        mediaDuration: media.movie.technicalMetadata?.mediaDuration,
+        mediaDuration: resolveMediaDuration(
+          media.movie.technicalMetadata?.mediaDuration,
+          media.duration,
+        ),
         analyzedHeight: media.movie.technicalMetadata?.mediaHeight,
       };
     }
@@ -111,7 +116,10 @@ export const useActiveMedia = (media: MediaItemType, episodeId?: string): Active
       seasonNumber: episode.seasonNumber,
       episodeNumber: episode.episodeNumber,
       playbackPlan: episode.playbackPlan,
-      mediaDuration: resolveEpisodeDuration(episode),
+      mediaDuration: resolveMediaDuration(
+        episode.technicalMetadata?.mediaDuration,
+        episode.duration,
+      ),
       analyzedHeight: episode.technicalMetadata?.mediaHeight,
       progress:
         episode.playbackProgresses?.[0] ||
