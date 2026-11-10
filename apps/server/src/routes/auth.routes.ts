@@ -15,6 +15,11 @@ import {
   type RemovedGoogleConnectionContent,
 } from '../services/google-connection-cleanup.service.js';
 
+const secureSessionCookie =
+  env.SESSION_COOKIE_SECURE === undefined
+    ? env.NODE_ENV === 'production'
+    : env.SESSION_COOKIE_SECURE === 'true';
+
 export const authRoutes: FastifyPluginAsync = async (fastify) => {
   const googleConnectionCleanup = new GoogleConnectionCleanupService(fastify.prisma);
 
@@ -93,7 +98,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         reply.setCookie('session_id', sessionToken, {
           path: '/',
           httpOnly: true,
-          secure: env.NODE_ENV === 'production',
+          secure: secureSessionCookie,
           sameSite: 'lax',
           maxAge: 7 * 24 * 60 * 60, // 7 days in seconds
         });
@@ -144,7 +149,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
     reply.clearCookie('session_id', {
       path: '/',
       httpOnly: true,
-      secure: env.NODE_ENV === 'production',
+      secure: secureSessionCookie,
       sameSite: 'lax',
     });
 
@@ -208,7 +213,7 @@ export const authRoutes: FastifyPluginAsync = async (fastify) => {
         reply.setCookie('session_id', sessionToken, {
           path: '/',
           httpOnly: true,
-          secure: env.NODE_ENV === 'production',
+          secure: secureSessionCookie,
           sameSite: 'lax',
           maxAge: 7 * 24 * 60 * 60,
         });

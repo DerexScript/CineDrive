@@ -2,6 +2,8 @@ import { z } from 'zod';
 
 export const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
+  /** Defaults to Secure in production; set false only for an intentional HTTP deployment. */
+  SESSION_COOKIE_SECURE: z.enum(['true', 'false']).optional(),
   PORT: z.coerce.number().default(3000),
   APP_NAME: z.string().default('Drive Cinema'),
   APP_URL: z.string().url().default('http://localhost:5173'),
