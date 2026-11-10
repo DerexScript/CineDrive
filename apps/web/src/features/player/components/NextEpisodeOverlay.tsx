@@ -117,7 +117,7 @@ export const NextEpisodeOverlay: React.FC<NextEpisodeOverlayProps> = ({
             className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold rounded-xl shadow-md shadow-brand-500/20 transition-all active:scale-[0.98]"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
-            <span>Hemen Oynat ({secondsRemaining}s)</span>
+            <span>{t.player.nextEpisode.playNow(secondsRemaining)}</span>
           </button>
 
           {/* Countdown Ring */}

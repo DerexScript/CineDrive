@@ -1062,6 +1062,7 @@ export const ptBR: Translations = {
     nextEpisode: {
       badge: "Próximo episódio",
       seasonEpisode: (season: number, episode: number) => `Temporada ${season} • Episódio ${episode}`,
+      playNow: (seconds: number) => `Reproduzir agora (${seconds}s)`,
     },
 
     quality: {

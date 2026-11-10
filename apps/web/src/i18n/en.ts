@@ -1069,6 +1069,7 @@ export const en: Translations = {
     nextEpisode: {
       badge: 'Next episode',
       seasonEpisode: (season: number, episode: number) => `Season ${season} • Episode ${episode}`,
+      playNow: (seconds: number) => `Play now (${seconds}s)`,
     },
 
     quality: {

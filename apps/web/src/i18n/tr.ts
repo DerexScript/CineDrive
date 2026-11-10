@@ -1071,6 +1071,7 @@ export const tr = {
     nextEpisode: {
       badge: 'Sonraki Bölüm',
       seasonEpisode: (season: number, episode: number) => `Sezon ${season} • Bölüm ${episode}`,
+      playNow: (seconds: number) => `Hemen Oynat (${seconds}s)`,
     },
 
     quality: {
