@@ -1,0 +1,72 @@
+services:
+  server:
+    image: ghcr.io/derexscript/cinedrive-server:${IMAGE_TAG:?Set IMAGE_TAG in the production .env}
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: file:/app/data/app.db
+      TRUST_PROXY: "true"
+    volumes:
+      - app_data:/app/data
+      - subtitle_cache:/app/data/subtitle_cache
+    expose:
+      - "3000"
+    networks:
+      - cinedrive_net
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget --quiet --tries=1 --output-document=/dev/null http://127.0.0.1:3000/api/ready || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  web:
+    image: ghcr.io/derexscript/cinedrive-web:${IMAGE_TAG:?Set IMAGE_TAG in the production .env}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:18082:80"
+    depends_on:
+      server:
+        condition: service_healthy
+    volumes:
+      - nginx_logs:/var/log/nginx
+    networks:
+      - cinedrive_net
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "wget --quiet --tries=1 --output-document=/dev/null http://127.0.0.1/health || exit 1",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  app_data:
+    name: cinedrive_app_data
+  subtitle_cache:
+    name: cinedrive_subtitle_cache
+  nginx_logs:
+    name: cinedrive_nginx_logs
+
+networks:
+  cinedrive_net:
+    name: cinedrive_production_net
