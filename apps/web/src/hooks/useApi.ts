@@ -34,6 +34,7 @@ import type {
   WatchHistoryType,
   LibraryScanType,
   EpisodeType,
+  PlaybackPlanType,
 } from '../types/media';
 import { useUiStore } from '../stores/useUiStore';
 
@@ -1110,6 +1111,7 @@ export interface AudioTrackCatalogDto {
   tracks: AudioTrackDto[];
   preferredLanguage: PreferredAudioLanguage;
   recommendedStreamIndex: number | null;
+  playbackPlan?: PlaybackPlanType;
 }
 
 export function usePlaybackSettingsQuery() {
@@ -1132,11 +1134,16 @@ export function useUpdatePlaybackSettingsMutation() {
   });
 }
 
-export function useAudioTrackCatalogQuery(driveFileId: string | null) {
+export function useAudioTrackCatalogQuery(
+  driveFileId: string | null,
+  refreshForPlaybackPlan = false,
+) {
   return useQuery({
     queryKey: ['audioTracks', driveFileId],
     enabled: Boolean(driveFileId),
     retry: false,
+    staleTime: refreshForPlaybackPlan ? 0 : undefined,
+    refetchOnMount: refreshForPlaybackPlan ? 'always' : undefined,
     queryFn: async ({ signal }) =>
       (
         await apiClient.get<AudioTrackCatalogDto>(

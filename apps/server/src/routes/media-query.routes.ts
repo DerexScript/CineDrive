@@ -6,7 +6,15 @@ import {
 } from '@cinedrive/shared';
 import type { PlaybackSkipBreakpoint } from '@cinedrive/shared';
 import type { Prisma } from '@cinedrive/prisma';
-import { buildPlaybackPlan } from '../services/playback-plan.service.js';
+import { buildPreferredAudioPlaybackPlan } from '../services/playback-plan.service.js';
+import {
+  buildGoogleDriveAudioTrackFingerprint,
+  buildLocalAudioTrackFingerprint,
+  buildPreferredAudioPlaybackSelection,
+  getPreferredAudioLanguage,
+  parseCachedAudioTracks,
+  type PreferredAudioLanguage,
+} from '../services/audio-track-catalog.service.js';
 import { ownedLibraryFilter, ownedMediaFilter } from '../utils/library-access.js';
 
 function safeJsonParse<T>(raw: string | null | undefined, fallback: T): T {
@@ -58,6 +66,10 @@ const listItemSelect = {
 } satisfies Prisma.MediaItemSelect;
 
 const technicalMetadataSelect = {
+  storageType: true,
+  size: true,
+  modifiedTime: true,
+  md5Checksum: true,
   mediaContainer: true,
   videoCodec: true,
   videoProfile: true,
@@ -69,7 +81,70 @@ const technicalMetadataSelect = {
   mediaDuration: true,
   mediaAnalyzedAt: true,
   mediaAnalysisError: true,
+  audioTracksJson: true,
+  audioTracksFingerprint: true,
 } satisfies Prisma.DriveFileSelect;
+
+type DriveFilePlaybackRecord = {
+  storageType: string;
+  size: bigint | null;
+  modifiedTime: Date | null;
+  md5Checksum: string | null;
+  audioTracksJson: string | null;
+  audioTracksFingerprint: string | null;
+  mediaContainer: string | null;
+  videoCodec: string | null;
+  videoProfile: string | null;
+  videoBitDepth: number | null;
+  audioCodec: string | null;
+  audioChannels: number | null;
+  mediaWidth: number | null;
+  mediaHeight: number | null;
+  mediaDuration: number | null;
+  mediaAnalyzedAt: Date | null;
+  mediaAnalysisError: string | null;
+};
+
+const formatDriveFilePlayback = (
+  driveFile: DriveFilePlaybackRecord | null,
+  preferredAudioLanguage: PreferredAudioLanguage,
+) => {
+  if (!driveFile) {
+    return {
+      technicalMetadata: null,
+      playbackPlan: buildPreferredAudioPlaybackPlan(
+        {},
+        { catalogKnown: false, hasAudio: false, isDefault: false },
+      ),
+    };
+  }
+
+  const {
+    storageType,
+    size,
+    modifiedTime,
+    md5Checksum,
+    audioTracksJson,
+    audioTracksFingerprint,
+    ...technicalMetadata
+  } = driveFile;
+  const currentFingerprint =
+    storageType === 'local' && size !== null && modifiedTime
+      ? buildLocalAudioTrackFingerprint(size, modifiedTime)
+      : storageType === 'gdrive'
+        ? buildGoogleDriveAudioTrackFingerprint(size, modifiedTime, md5Checksum)
+        : null;
+  const audioTracks =
+    currentFingerprint && currentFingerprint === audioTracksFingerprint
+      ? parseCachedAudioTracks(audioTracksJson)
+      : null;
+  const selection = buildPreferredAudioPlaybackSelection(audioTracks, preferredAudioLanguage);
+
+  return {
+    technicalMetadata,
+    playbackPlan: buildPreferredAudioPlaybackPlan(technicalMetadata, selection),
+  };
+};
 
 const safeSubtitleDriveFileSelect = {
   id: true,
@@ -549,6 +624,7 @@ export const mediaQueryRoutes: FastifyPluginAsync = async (fastify) => {
         });
       }
 
+      const preferredAudioLanguage = await getPreferredAudioLanguage(fastify, userId);
       const { skipBreakpointsJson, seriesNotes, ...mediaItem } = item;
       const formattedSubtitles = item.subtitles.map(safeSubtitleWithUrl);
 
@@ -565,11 +641,12 @@ export const mediaQueryRoutes: FastifyPluginAsync = async (fastify) => {
                     skipBreakpointsJson: episodeSkipBreakpointsJson,
                     ...episode
                   } = ep;
+                  const playback = formatDriveFilePlayback(driveFile, preferredAudioLanguage);
                   return {
                     ...episode,
                     skipBreakpoints: decodePlaybackSkipBreakpoints(episodeSkipBreakpointsJson),
-                    technicalMetadata: driveFile,
-                    playbackPlan: buildPlaybackPlan(driveFile),
+                    technicalMetadata: playback.technicalMetadata,
+                    playbackPlan: playback.playbackPlan,
                     subtitles: ep.subtitles.map(safeSubtitleWithUrl),
                   };
                 }),
@@ -578,13 +655,16 @@ export const mediaQueryRoutes: FastifyPluginAsync = async (fastify) => {
           }
         : null;
       const formattedMovie = item.movie
-        ? {
-            id: item.movie.id,
-            mediaItemId: item.movie.mediaItemId,
-            driveFileId: item.movie.driveFileId,
-            technicalMetadata: item.movie.driveFile,
-            playbackPlan: buildPlaybackPlan(item.movie.driveFile || {}),
-          }
+        ? (() => {
+            const playback = formatDriveFilePlayback(item.movie.driveFile, preferredAudioLanguage);
+            return {
+              id: item.movie.id,
+              mediaItemId: item.movie.mediaItemId,
+              driveFileId: item.movie.driveFileId,
+              technicalMetadata: playback.technicalMetadata,
+              playbackPlan: playback.playbackPlan,
+            };
+          })()
         : null;
 
       return reply.status(200).send({

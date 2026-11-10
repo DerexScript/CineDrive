@@ -1,6 +1,8 @@
 import type { FastifyPluginAsync } from 'fastify';
 import { resolveSafeLocalFile } from '../../services/local-folder-validation.js';
+import { buildPreferredAudioPlaybackPlan } from '../../services/playback-plan.service.js';
 import {
+  buildPreferredAudioPlaybackSelection,
   choosePreferredAudioTrack,
   getAudioTrackCatalog,
   getPreferredAudioLanguage,
@@ -49,11 +51,16 @@ export const mediaAudioTrackRoutes: FastifyPluginAsync = async (fastify) => {
         const tracks = await getAudioTrackCatalog(fastify, file, request.user!.id, localFilePath);
         const preferredLanguage = await getPreferredAudioLanguage(fastify, request.user!.id);
         const recommended = choosePreferredAudioTrack(tracks, preferredLanguage);
+        const playbackPlan = buildPreferredAudioPlaybackPlan(
+          file,
+          buildPreferredAudioPlaybackSelection(tracks, preferredLanguage),
+        );
         reply.header('Cache-Control', 'private, no-store');
         return reply.status(200).send({
           tracks,
           preferredLanguage,
           recommendedStreamIndex: recommended?.streamIndex ?? null,
+          playbackPlan,
         });
       } catch (error) {
         request.log.warn({ error, driveFileId: file.id }, 'Audio track discovery failed');
