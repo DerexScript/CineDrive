@@ -104,8 +104,9 @@ const compatibleModeForBrowser = (
 
 /**
  * Extends the codec plan with the user's selected-language track. Direct
- * playback is safe only when the preferred track is the file's default (or
- * the file has no audio); unknown catalogs conservatively keep compatibility.
+ * playback is safe only when the preferred track is the file's default and
+ * its codec is supported by that browser; unknown catalogs conservatively use
+ * compatibility.
  */
 export const buildPreferredAudioPlaybackPlan = (
   source: PlaybackSource,
@@ -120,20 +121,32 @@ export const buildPreferredAudioPlaybackPlan = (
     : source;
   const plan = buildPlaybackPlan(plannedSource);
   const technicalMetadataKnown = Boolean(source.mediaAnalyzedAt && source.videoCodec);
-  const needsCompatibility =
-    !selection.catalogKnown ||
-    (selection.hasAudio && !selection.isDefault);
+  const preferredAudioCodec = selection.codec?.toLowerCase().trim() || null;
+  const needsTrackCompatibility =
+    !selection.catalogKnown || (selection.hasAudio && !selection.isDefault);
+  const safariAudioNeedsCompatibility =
+    selection.hasAudio && (!preferredAudioCodec || !SAFARI_AUDIO_CODECS.has(preferredAudioCodec));
+  const chromiumAudioNeedsCompatibility =
+    selection.hasAudio && (!preferredAudioCodec || !CHROMIUM_AUDIO_CODECS.has(preferredAudioCodec));
+  const safariNeedsCompatibility = needsTrackCompatibility || safariAudioNeedsCompatibility;
+  const chromiumNeedsCompatibility = needsTrackCompatibility || chromiumAudioNeedsCompatibility;
 
-  if (!needsCompatibility) return plan;
+  if (!safariNeedsCompatibility && !chromiumNeedsCompatibility) return plan;
 
   return {
     ...plan,
-    safari: compatibleModeForBrowser('safari', plan.safari, plannedSource),
-    chromium: compatibleModeForBrowser('chromium', plan.chromium, plannedSource),
+    safari: safariNeedsCompatibility
+      ? compatibleModeForBrowser('safari', plan.safari, plannedSource)
+      : plan.safari,
+    chromium: chromiumNeedsCompatibility
+      ? compatibleModeForBrowser('chromium', plan.chromium, plannedSource)
+      : plan.chromium,
     reason: !selection.catalogKnown
       ? 'audio_catalog_unknown'
       : !technicalMetadataKnown
         ? 'technical_metadata_missing'
-        : `${plan.reason}:preferred_track_not_default`,
+        : !selection.isDefault
+          ? `${plan.reason}:preferred_track_not_default`
+          : `${plan.reason}:preferred_audio_codec_unsupported`,
   };
 };
