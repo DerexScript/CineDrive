@@ -20,7 +20,11 @@ export const createHlsRecovery = ({
   stop: (terminal: boolean) => void;
   onRecovering: (attempt: number, max: number) => void;
   onRecovered: () => void;
-  onFatalError: () => void;
+  onFatalError: (
+    positionSeconds: number,
+    playbackIntent: boolean,
+    fallbackAllowed: boolean,
+  ) => void;
 }) => {
   let disposed = false;
   let failed = false;
@@ -76,7 +80,7 @@ export const createHlsRecovery = ({
     clear('stable');
     scheduleStableReset();
   };
-  const fail = () => {
+  const fail = (fallbackAllowed = true) => {
     if (failed || disposed) return;
     if (!recovering && Number.isFinite(video.currentTime)) position = video.currentTime;
     failed = true;
@@ -85,7 +89,7 @@ export const createHlsRecovery = ({
     clearAll();
     stop(true);
     video.pause();
-    onFatalError();
+    onFatalError(position, wantsPlayback, fallbackAllowed);
   };
   const schedule = () => {
     if (disposed || failed || timers.retry !== null) return;

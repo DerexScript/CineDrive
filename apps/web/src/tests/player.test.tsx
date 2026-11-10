@@ -24,10 +24,12 @@ import { ResumeOverlay } from '../features/player/components/ResumeOverlay';
 import { NextEpisodeOverlay } from '../features/player/components/NextEpisodeOverlay';
 import { PlayerError } from '../features/player/components/PlayerError';
 import { SubtitleMenu } from '../features/player/components/SubtitleMenu';
+import { PlayerControls } from '../features/player/components/PlayerControls';
 import { useActiveMedia } from '../features/player/hooks/useActiveMedia';
 import { usePlayerStore } from '../features/player/stores/usePlayerStore';
 import type { EpisodeType, MediaItemType } from '../types/media';
 import { findActiveSubtitleCue, parseWebVttCues } from '../features/player/utils/subtitleCues';
+import { t } from '../i18n';
 
 describe('Player Components Unit Tests', () => {
   const hlsSessionId = '00000000-0000-4000-8000-000000000000';
@@ -74,6 +76,88 @@ describe('Player Components Unit Tests', () => {
     });
 
     expect(getBufferedAheadSeconds(video)).toBe(15);
+  });
+
+  it('keeps audio controls visible while tracks load and offers retry after an error', () => {
+    const retryAudioTracks = vi.fn();
+    const onSelectAudioTrack = vi.fn();
+    const controlProps = {
+      isPlaying: false,
+      currentTime: 0,
+      duration: 100,
+      bufferedTime: 0,
+      volume: 1,
+      isMuted: false,
+      playbackSpeed: 1,
+      activeSubtitleId: null,
+      onToggleTranscode: vi.fn(),
+      onTogglePlay: vi.fn(),
+      onSkipBackward: vi.fn(),
+      onSkipForward: vi.fn(),
+      onSeek: vi.fn(),
+      onVolumeChange: vi.fn(),
+      onToggleMute: vi.fn(),
+      onSelectSpeed: vi.fn(),
+      onSelectSubtitle: vi.fn(),
+      onSelectAudioTrack,
+      onRetryAudioTracks: retryAudioTracks,
+      onTogglePiP: vi.fn(),
+      onToggleFullscreen: vi.fn(),
+      canDisableCompatibilityMode: false,
+      compatibilityModeDisabledMessage: t.player.audioTracks.loading,
+      useTranscode: true,
+    };
+    const { rerender } = render(
+      <PlayerControls {...controlProps} audioTrackCatalogStatus="loading" />,
+    );
+
+    expect(screen.getByRole('button', { name: t.player.audioTracks.loading })).toBeDisabled();
+    const compatibilityButton = screen.getByRole('button', {
+      name: t.player.controls.transcodeRequiredForAudio,
+    });
+    expect(compatibilityButton).toBeDisabled();
+    expect(compatibilityButton).toHaveAttribute('title', t.player.audioTracks.loading);
+
+    rerender(
+      <PlayerControls
+        {...controlProps}
+        audioTrackCatalogStatus="error"
+        compatibilityModeDisabledMessage={t.player.audioTracks.unavailable}
+      />,
+    );
+    const retryButton = screen.getByRole('button', { name: t.player.audioTracks.unavailable });
+    expect(retryButton).toBeEnabled();
+    fireEvent.click(retryButton);
+    expect(retryAudioTracks).toHaveBeenCalledOnce();
+
+    rerender(
+      <PlayerControls
+        {...controlProps}
+        audioTrackCatalogStatus="ready"
+        canDisableCompatibilityMode
+        compatibilityModeDisabledMessage={t.player.controls.transcodeRequiredForAudio}
+        audioTracks={[
+          {
+            streamIndex: 0,
+            language: 'pt-BR',
+            title: 'Portuguese',
+            codec: 'aac',
+            channelLayout: 'stereo',
+            isDefault: true,
+          },
+          {
+            streamIndex: 1,
+            language: 'en',
+            title: 'English',
+            codec: 'aac',
+            channelLayout: 'stereo',
+            isDefault: false,
+          },
+        ]}
+      />,
+    );
+    expect(screen.getByRole('button', { name: t.player.controls.audioMenu })).toBeEnabled();
+    expect(screen.getByRole('button', { name: t.player.controls.transcodeToggle })).toBeEnabled();
   });
 
   it('uses native iPhone video fullscreen when the standard API is unavailable', async () => {
@@ -370,7 +454,9 @@ Sonraki cümle`);
       },
     };
 
-    const LocationProbe = () => <output data-testid="current-path">{useLocation().pathname}</output>;
+    const LocationProbe = () => (
+      <output data-testid="current-path">{useLocation().pathname}</output>
+    );
     const PlayerRoute = () => {
       const { episodeId: selectedEpisodeId } = useParams();
       return (
@@ -1153,6 +1239,166 @@ Sonraki cümle`);
 
     fireEvent.canPlay(video);
     await waitFor(() => expect(playSpy).toHaveBeenCalled());
+  });
+
+  it('keeps Chromium audio compatibility enabled for a default E-AC-3 track', () => {
+    vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130.0.0.0 Safari/537.36',
+    );
+    const audioQueryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    audioQueryClient.setQueryData(['audioTracks', 'gdrive_interstellar_file'], {
+      tracks: [
+        {
+          streamIndex: 0,
+          language: 'pt-BR',
+          title: 'Português do Brasil',
+          codec: 'eac3',
+          channelLayout: '5.1(side)',
+          isDefault: true,
+        },
+        {
+          streamIndex: 1,
+          language: 'en',
+          title: 'English',
+          codec: 'aac',
+          channelLayout: 'stereo',
+          isDefault: false,
+        },
+      ],
+      preferredLanguage: 'pt-BR',
+      recommendedStreamIndex: 0,
+    });
+
+    const { container } = render(
+      <QueryClientProvider client={audioQueryClient}>
+        <BrowserRouter>
+          <MediaPlayer media={mockMovie} />
+        </BrowserRouter>
+      </QueryClientProvider>,
+    );
+
+    expect(
+      screen.getByRole('button', { name: t.player.controls.transcodeRequiredForAudio }),
+    ).toBeDisabled();
+    expect(container.querySelector('video')?.getAttribute('src')).toContain('transcode=audio');
+  });
+
+  it('rewinds five seconds when switching silent direct playback to compatibility', () => {
+    vi.useFakeTimers();
+    const audioQueryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    audioQueryClient.setQueryData(['audioTracks', 'file_1'], {
+      tracks: [
+        {
+          streamIndex: 0,
+          language: 'pt-BR',
+          title: 'Português do Brasil',
+          codec: 'aac',
+          channelLayout: 'stereo',
+          isDefault: true,
+        },
+      ],
+      preferredLanguage: 'pt-BR',
+      recommendedStreamIndex: 0,
+    });
+
+    const { container } = render(
+      <QueryClientProvider client={audioQueryClient}>
+        <BrowserRouter>
+          <MediaPlayer media={mockSeries} episodeId="episode_1" />
+        </BrowserRouter>
+      </QueryClientProvider>,
+    );
+
+    const video = container.querySelector('video') as HTMLVideoElement & {
+      webkitAudioDecodedByteCount?: number;
+    };
+    let videoTime = 120;
+    Object.defineProperty(video, 'currentTime', {
+      configurable: true,
+      get: () => videoTime,
+      set: (time: number) => {
+        videoTime = time;
+      },
+    });
+    Object.defineProperty(video, 'paused', { configurable: true, value: false });
+    Object.defineProperty(video, 'webkitAudioDecodedByteCount', {
+      configurable: true,
+      value: 0,
+    });
+    vi.spyOn(video, 'play').mockResolvedValue();
+
+    fireEvent.loadedMetadata(video);
+    fireEvent.timeUpdate(video);
+    fireEvent.click(screen.getByRole('button', { name: t.player.controls.transcodeToggle }));
+    expect(video.getAttribute('src')).toBe('/api/media/file_1/stream');
+
+    fireEvent.loadedMetadata(video);
+    fireEvent.play(video);
+    videoTime = 149;
+
+    act(() => {
+      vi.advanceTimersByTime(6000);
+    });
+
+    expect(video.getAttribute('src')).toContain('transcode=audio&start=144&session=');
+  });
+
+  it('can reapply the recommended audio track after entering direct mode', () => {
+    const audioQueryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    audioQueryClient.setQueryData(['audioTracks', 'gdrive_interstellar_file'], {
+      tracks: [
+        {
+          streamIndex: 0,
+          language: 'pt-BR',
+          title: 'Português do Brasil',
+          codec: 'aac',
+          channelLayout: 'stereo',
+          isDefault: true,
+        },
+        {
+          streamIndex: 1,
+          language: 'en',
+          title: 'English',
+          codec: 'aac',
+          channelLayout: 'stereo',
+          isDefault: false,
+        },
+      ],
+      preferredLanguage: 'pt-BR',
+      recommendedStreamIndex: 0,
+    });
+
+    const { container } = render(
+      <QueryClientProvider client={audioQueryClient}>
+        <BrowserRouter>
+          <MediaPlayer media={mockMovie} />
+        </BrowserRouter>
+      </QueryClientProvider>,
+    );
+    const video = container.querySelector('video')!;
+    let videoTime = 77;
+    Object.defineProperty(video, 'currentTime', {
+      configurable: true,
+      get: () => videoTime,
+      set: (time: number) => {
+        videoTime = time;
+      },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: t.player.controls.transcodeToggle }));
+    expect(video.getAttribute('src')).toBe('/api/media/gdrive_interstellar_file/stream');
+
+    fireEvent.click(screen.getByRole('button', { name: t.player.controls.audioMenu }));
+    fireEvent.click(screen.getByRole('button', { name: /Português do Brasil/ }));
+
+    expect(video.getAttribute('src')).toContain('transcode=audio&start=77&session=');
+    expect(video.getAttribute('src')).toContain('&audioTrackIndex=0');
   });
 
   it('adds the selected quality profile to a full transcode request', () => {

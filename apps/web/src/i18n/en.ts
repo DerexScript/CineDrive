@@ -1052,10 +1052,9 @@ export const en: Translations = {
       codecTitle: 'Video format not supported',
       genericTitle: 'Playback error',
       codecBody:
-        'Your browser does not support this video format directly. Turn on audio/Safari compatibility mode below.',
+        'Your browser cannot play this format directly, and the automatic compatibility options did not work.',
       genericBody: 'An error occurred while loading the video stream.',
-      enableTranscode: 'Play in audio / Safari compatibility mode',
-      retryDirect: 'Retry direct playback',
+      retryPlayback: 'Try again',
       retryStream: 'Retry stream',
     },
 
@@ -1086,6 +1085,8 @@ export const en: Translations = {
     },
 
     audioTracks: {
+      loading: 'Loading audio tracks…',
+      unavailable: 'Could not load audio tracks. Select to try again.',
       heading: 'Audio track',
       usePreferred: 'Use preferred language',
       defaultTrack: 'Default track',

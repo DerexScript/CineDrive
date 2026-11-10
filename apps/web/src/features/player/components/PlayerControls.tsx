@@ -15,6 +15,7 @@ import {
   Sparkles,
   Radio,
   MonitorUp,
+  Loader2,
 } from 'lucide-react';
 import { PlayerTimeline } from './PlayerTimeline';
 import { t } from '../../../i18n';
@@ -25,6 +26,8 @@ import type { SubtitleTrackType } from '../types/player';
 import { QualityMenu, type QualityPreference } from './QualityMenu';
 import { AudioTrackMenu } from './AudioTrackMenu';
 import type { AudioTrackDto, PreferredAudioLanguage } from '../../../hooks/useApi';
+
+type AudioTrackCatalogStatus = 'ready' | 'loading' | 'error';
 
 interface PlayerControlsProps {
   mediaId?: string;
@@ -42,7 +45,10 @@ interface PlayerControlsProps {
   preferredAudioLanguage?: PreferredAudioLanguage;
   recommendedAudioTrackIndex?: number | null;
   selectedAudioTrackIndex?: number | null;
+  audioTrackCatalogStatus?: AudioTrackCatalogStatus;
+  onRetryAudioTracks?: () => void;
   canDisableCompatibilityMode?: boolean;
+  compatibilityModeDisabledMessage?: string;
   subtitles?: SubtitleTrackType[];
   activeSubtitleId: string | null;
   hasPreviousEpisode?: boolean;
@@ -86,7 +92,10 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   preferredAudioLanguage = 'pt-BR',
   recommendedAudioTrackIndex = null,
   selectedAudioTrackIndex = null,
+  audioTrackCatalogStatus = 'ready',
+  onRetryAudioTracks,
   canDisableCompatibilityMode = true,
+  compatibilityModeDisabledMessage = t.player.controls.transcodeRequiredForAudio,
   subtitles = [],
   activeSubtitleId,
   hasPreviousEpisode,
@@ -118,6 +127,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
   const [speedMenuOpen, setSpeedMenuOpen] = useState(false);
   const [qualityMenuOpen, setQualityMenuOpen] = useState(false);
   const { cinemaMode, toggleCinemaMode } = useUiStore();
+  const canToggleCompatibilityMode = !useTranscode || canDisableCompatibilityMode;
 
   /**
    * Every control in the bar shares this. They previously mixed `p-2` with
@@ -157,7 +167,10 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
         />
       )}
 
-      {audioMenuOpen && onSelectAudioTrack ? (
+      {audioMenuOpen &&
+      audioTrackCatalogStatus === 'ready' &&
+      audioTracks.length > 1 &&
+      onSelectAudioTrack ? (
         <AudioTrackMenu
           tracks={audioTracks}
           preferredLanguage={preferredAudioLanguage}
@@ -295,36 +308,62 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
             <Subtitles className="h-5 w-5" />
           </button>
 
-          {audioTracks.length > 1 && onSelectAudioTrack ? (
+          {onSelectAudioTrack && (audioTrackCatalogStatus !== 'ready' || audioTracks.length > 1) ? (
             <button
               type="button"
               onClick={() => {
+                if (audioTrackCatalogStatus === 'error') {
+                  onRetryAudioTracks?.();
+                  return;
+                }
+                if (audioTrackCatalogStatus !== 'ready') return;
                 setAudioMenuOpen(!audioMenuOpen);
                 setSubtitleMenuOpen(false);
                 setSpeedMenuOpen(false);
                 setQualityMenuOpen(false);
               }}
-              aria-label={t.player.controls.audioMenu}
+              aria-label={
+                audioTrackCatalogStatus === 'loading'
+                  ? t.player.audioTracks.loading
+                  : audioTrackCatalogStatus === 'error'
+                    ? t.player.audioTracks.unavailable
+                    : t.player.controls.audioMenu
+              }
               aria-expanded={audioMenuOpen}
-              title={t.player.controls.audioMenu}
+              title={
+                audioTrackCatalogStatus === 'loading'
+                  ? t.player.audioTracks.loading
+                  : audioTrackCatalogStatus === 'error'
+                    ? t.player.audioTracks.unavailable
+                    : t.player.controls.audioMenu
+              }
+              disabled={
+                audioTrackCatalogStatus === 'loading' ||
+                (audioTrackCatalogStatus === 'error' && !onRetryAudioTracks)
+              }
+              aria-busy={audioTrackCatalogStatus === 'loading'}
               className={audioMenuOpen ? activeControlClasses : controlClasses}
             >
-              <Volume2 className="h-5 w-5" />
+              {audioTrackCatalogStatus === 'loading' ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <Volume2 className="h-5 w-5" />
+              )}
             </button>
           ) : null}
 
           {onToggleTranscode && (
             <button
-              onClick={canDisableCompatibilityMode ? onToggleTranscode : undefined}
-              disabled={!canDisableCompatibilityMode}
+              onClick={canToggleCompatibilityMode ? onToggleTranscode : undefined}
+              disabled={!canToggleCompatibilityMode}
               aria-label={
-                canDisableCompatibilityMode
+                canToggleCompatibilityMode
                   ? t.player.controls.transcodeToggle
                   : t.player.controls.transcodeRequiredForAudio
               }
               title={
-                !canDisableCompatibilityMode
-                  ? t.player.controls.transcodeRequiredForAudio
+                !canToggleCompatibilityMode
+                  ? compatibilityModeDisabledMessage
                   : useTranscode
                     ? t.player.controls.transcodeActive
                     : t.player.controls.transcodeEnable

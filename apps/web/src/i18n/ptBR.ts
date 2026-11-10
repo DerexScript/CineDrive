@@ -1045,10 +1045,9 @@ export const ptBR: Translations = {
       codecTitle: "Formato de vídeo não suportado",
       genericTitle: "Erro de reprodução",
       codecBody:
-        "Seu navegador não suporta este formato de vídeo diretamente. Ative o modo de compatibilidade de áudio/Safari abaixo.",
+        "Seu navegador não consegue reproduzir este formato diretamente, e as tentativas automáticas de compatibilidade não funcionaram.",
       genericBody: 'Ocorreu um erro ao carregar a transmissão de vídeo.',
-      enableTranscode: "Reproduzir em modo de compatibilidade de áudio/Safari",
-      retryDirect: "Tentar novamente a reprodução direta",
+      retryPlayback: "Tentar novamente",
       retryStream: 'Tentar novamente',
     },
 
@@ -1079,6 +1078,8 @@ export const ptBR: Translations = {
     },
 
     audioTracks: {
+      loading: 'Carregando faixas de áudio…',
+      unavailable: 'Não foi possível carregar as faixas de áudio. Selecione para tentar novamente.',
       heading: "Faixa de áudio",
       usePreferred: 'Usar o idioma preferido',
       defaultTrack: "Faixa padrão",

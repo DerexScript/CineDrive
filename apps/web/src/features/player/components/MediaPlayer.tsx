@@ -22,6 +22,7 @@ import { useSubtitleTracks } from '../hooks/useSubtitleTracks';
 import { usePlayerTelemetry } from '../hooks/usePlayerTelemetry';
 import { useResettableState } from '../../../hooks/useResettableState';
 import {
+  getBrowserFamily,
   getBufferedAheadSeconds,
   isSafariBrowser,
   togglePlayerFullscreen,
@@ -47,7 +48,20 @@ const HLS_SEEK_DEBOUNCE_MS = 400;
 /** After any source change, ignore end-of-media heuristics for this long. */
 const NEXT_EPISODE_SUPPRESSION_MS = 20_000;
 const AUDIO_COMPATIBILITY_PROBE_MS = 6000;
+const AUDIO_COMPATIBILITY_REWIND_SECONDS = 5;
 const STABLE_PLAYBACK_RESET_MS = 30_000;
+
+// Chromium can advance video while silently skipping these audio codecs in direct playback.
+const requiresChromiumAudioCompatibility = (codec: string) => {
+  const normalizedCodec = codec.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return (
+    normalizedCodec === 'ac3' ||
+    normalizedCodec === 'eac3' ||
+    normalizedCodec.startsWith('dts') ||
+    normalizedCodec === 'dca' ||
+    normalizedCodec.startsWith('truehd')
+  );
+};
 
 export const MediaPlayer: React.FC<MediaPlayerProps> = ({
   media,
@@ -75,11 +89,33 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
   const cinemaMode = useUiStore((state) => state.cinemaMode);
 
   const active = useActiveMedia(media, episodeId);
-  // const recommendedMode: PlaybackMode = isSafari
-  //   ? active.playbackPlan?.safari || 'direct'
-  //   : active.playbackPlan?.chromium || 'direct';
-
-  const recommendedMode: PlaybackMode = isSafari ? 'hls' : 'audio';
+  const compatibilityFallback: PlaybackMode = isSafari ? 'hls' : 'audio';
+  const playbackPlanNeedsAudioCatalog =
+    Boolean(active.driveFileId) &&
+    (!active.playbackPlan || active.playbackPlan.reason === 'audio_catalog_unknown');
+  const audioTrackCatalogQuery = useAudioTrackCatalogQuery(
+    active.driveFileId,
+    playbackPlanNeedsAudioCatalog,
+  );
+  const { data: audioTrackCatalog } = audioTrackCatalogQuery;
+  const canUseCatalogPlaybackPlan =
+    playbackPlanNeedsAudioCatalog &&
+    Boolean(audioTrackCatalog?.playbackPlan) &&
+    audioTrackCatalogQuery.isFetchedAfterMount &&
+    !audioTrackCatalogQuery.isFetching &&
+    !audioTrackCatalogQuery.isError;
+  const effectivePlaybackPlan = canUseCatalogPlaybackPlan
+    ? audioTrackCatalog?.playbackPlan
+    : active.playbackPlan;
+  const recommendedMode: PlaybackMode = isSafari
+    ? (effectivePlaybackPlan?.safari ?? compatibilityFallback)
+    : (effectivePlaybackPlan?.chromium ?? compatibilityFallback);
+  const compatibilityMode: PlaybackMode =
+    recommendedMode === 'direct' ? compatibilityFallback : recommendedMode;
+  const isResolvingPlaybackPlan =
+    playbackPlanNeedsAudioCatalog &&
+    !audioTrackCatalogQuery.isError &&
+    (!audioTrackCatalogQuery.isFetchedAfterMount || audioTrackCatalogQuery.isFetching);
 
   const source = usePlaybackSource({
     driveFileId: active.driveFileId,
@@ -87,13 +123,25 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
     sourceHeight: active.analyzedHeight,
   });
   const { dispatch: dispatchSource, timelineOffset, useTranscode } = source;
-  const { data: audioTrackCatalog } = useAudioTrackCatalogQuery(active.driveFileId);
   const audioTracks = audioTrackCatalog?.tracks || [];
+  const audioTrackCatalogStatus =
+    !active.driveFileId
+      ? 'ready'
+      : isResolvingPlaybackPlan
+        ? 'loading'
+        : audioTrackCatalog
+          ? 'ready'
+          : audioTrackCatalogQuery.isError && !audioTrackCatalogQuery.isFetching
+            ? 'error'
+            : 'loading';
   const activeAudioTrack = audioTracks.find(
     (track) =>
       track.streamIndex ===
       (source.selectedAudioTrackIndex ?? audioTrackCatalog?.recommendedStreamIndex),
   );
+  const shouldDelayPlaybackForPlan =
+    isResolvingPlaybackPlan ||
+    (canUseCatalogPlaybackPlan && source.playbackMode !== recommendedMode);
 
   // --- Timers and cross-render bookkeeping -------------------------------
   const audioCompatibilityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -103,6 +151,9 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
   const stallRecoveryAttemptsRef = useRef(0);
   const recoveryPositionRef = useRef<number | null>(null);
   const resumeAfterSourceChangeRef = useRef<PlaybackMode | null>(null);
+  const automaticFallbackModesTriedRef = useRef<Set<PlaybackMode>>(new Set([recommendedMode]));
+  const automaticFallbackPendingModeRef = useRef<PlaybackMode | null>(null);
+  const latestPlaybackStateRef = useRef({ position: 0, isPlaying: false });
   const resumePromptHandledRef = useRef(false);
   const initialPositionHandledKeyRef = useRef<string | null>(null);
   const completionThresholdTriggeredRef = useRef(false);
@@ -185,7 +236,7 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
     mediaId: media.id,
     driveFileId: active.driveFileId,
     isSafari,
-    playbackMode: source.playbackMode,
+    playbackMode: shouldDelayPlaybackForPlan ? 'direct' : source.playbackMode,
     sessionId: source.sessionId,
     startOffset: source.startOffset,
   });
@@ -220,9 +271,89 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
     ref.current = null;
   };
 
+  const switchToAutomaticFallback = useCallback(
+    (
+      failedMode: PlaybackMode,
+      localPositionSeconds?: number,
+      playbackIntent?: boolean,
+    ) => {
+      if (
+        automaticFallbackPendingModeRef.current &&
+        failedMode !== automaticFallbackPendingModeRef.current
+      ) {
+        return true;
+      }
+      automaticFallbackPendingModeRef.current = null;
+
+      const fallbackCandidates: PlaybackMode[] =
+        failedMode === 'direct'
+          ? [compatibilityMode, isSafari ? 'full' : 'hls', 'audio', 'full']
+          : failedMode === 'hls'
+            ? ['audio', 'full']
+            : failedMode === 'audio'
+              ? ['hls', 'full']
+              : ['hls', 'audio'];
+      // A failed mode is never selected again for this source, preventing a
+      // compatibility loop while still allowing the remaining transports.
+      const triedModes = automaticFallbackModesTriedRef.current;
+      triedModes.add(failedMode);
+      const fallbackMode = fallbackCandidates.find(
+        (candidate) => candidate !== failedMode && !triedModes.has(candidate),
+      );
+      if (!fallbackMode) return false;
+
+      triedModes.add(fallbackMode);
+      automaticFallbackPendingModeRef.current = fallbackMode;
+      const video = videoRef.current;
+      const candidatePosition =
+        localPositionSeconds !== undefined
+          ? localPositionSeconds + timelineOffset
+          : video && Number.isFinite(video.currentTime)
+            ? video.currentTime + timelineOffset
+            : latestPlaybackStateRef.current.position;
+      const playbackPosition = Number.isFinite(candidatePosition)
+        ? Math.max(0, candidatePosition)
+        : Math.max(0, latestPlaybackStateRef.current.position);
+      const shouldResume =
+        playbackIntent ??
+        (latestPlaybackStateRef.current.isPlaying || Boolean(video && !video.paused));
+
+      suppressNextEpisode();
+      latestPlaybackStateRef.current.position = playbackPosition;
+      latestPlaybackStateRef.current.isPlaying = shouldResume;
+      recoveryPositionRef.current = null;
+      resumeAfterSourceChangeRef.current = shouldResume ? fallbackMode : null;
+      setErrorState(null);
+      setIsBuffering(true);
+      setConnectionMessage(t.player.buffering);
+      dispatchSource({
+        type: 'setMode',
+        playbackMode: fallbackMode,
+        offsetSeconds: Math.floor(playbackPosition),
+      });
+      return true;
+    },
+    [
+      compatibilityMode,
+      dispatchSource,
+      isSafari,
+      setConnectionMessage,
+      setErrorState,
+      suppressNextEpisode,
+      timelineOffset,
+    ],
+  );
+  const switchToAutomaticFallbackRef = useRef(switchToAutomaticFallback);
+  useLayoutEffect(() => {
+    switchToAutomaticFallbackRef.current = switchToAutomaticFallback;
+  }, [switchToAutomaticFallback]);
+
   // --- Source lifecycle ---------------------------------------------------
   useEffect(() => {
     clearTimer(pendingSeekTimerRef);
+    automaticFallbackModesTriedRef.current = new Set([recommendedMode]);
+    automaticFallbackPendingModeRef.current = null;
+    latestPlaybackStateRef.current = { position: 0, isPlaying: false };
     dispatchSource({
       type: 'reset',
       driveFileId: active.driveFileId,
@@ -259,22 +390,32 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
   );
 
   const handleHlsUnsupported = useCallback(() => {
+    if (switchToAutomaticFallbackRef.current('hls')) return;
     setErrorState({
       code: 'STREAM_FAILED',
       message: t.player.hlsUnsupported,
       isRetryable: true,
     });
   }, [setErrorState]);
-  const handleFatalHlsError = useCallback(() => {
-    resumeAfterSourceChangeRef.current = null;
-    setIsBuffering(false);
-    setConnectionMessage(null);
-    setErrorState({
-      code: 'STREAM_FAILED',
-      message: t.player.hlsRecoveryFailed,
-      isRetryable: true,
-    });
-  }, [setConnectionMessage, setErrorState]);
+  const handleFatalHlsError = useCallback(
+    (positionSeconds: number, playbackIntent: boolean, fallbackAllowed: boolean) => {
+      if (
+        fallbackAllowed &&
+        switchToAutomaticFallbackRef.current('hls', positionSeconds, playbackIntent)
+      ) {
+        return;
+      }
+      resumeAfterSourceChangeRef.current = null;
+      setIsBuffering(false);
+      setConnectionMessage(null);
+      setErrorState({
+        code: 'STREAM_FAILED',
+        message: t.player.hlsRecoveryFailed,
+        isRetryable: true,
+      });
+    },
+    [setConnectionMessage, setErrorState],
+  );
   const handleHlsRecovering = useCallback(
     (attempt: number, max: number) => {
       resumeAfterSourceChangeRef.current = null;
@@ -295,8 +436,8 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
     getRecoveryPosition: getHlsRecoveryPosition,
   } = useHlsPlayback({
     videoRef,
-    sourceUrl: source.sourceUrl,
-    active: source.playbackMode === 'hls',
+    sourceUrl: shouldDelayPlaybackForPlan ? '' : source.sourceUrl,
+    active: source.playbackMode === 'hls' && !shouldDelayPlaybackForPlan,
     native: isSafari,
     onUnsupported: handleHlsUnsupported,
     onFatalError: handleFatalHlsError,
@@ -461,6 +602,7 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
         0,
         duration > 0 ? Math.min(duration, requestedTime) : requestedTime,
       );
+    latestPlaybackStateRef.current.position = targetTime;
       seekStartedAtRef.current = performance.now();
       saveProgress(false, targetTime);
 
@@ -528,6 +670,9 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
   const handleLoadedMetadata = () => {
     const video = videoRef.current;
     if (!video) return;
+    if (automaticFallbackPendingModeRef.current === source.playbackMode) {
+      automaticFallbackPendingModeRef.current = null;
+    }
 
     const localPlaybackTime =
       source.playbackMode === 'hls'
@@ -552,6 +697,8 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
     if (source.playbackMode === 'hls' && handleHlsLoadedMetadata()) return;
 
     if (video.error) {
+      if (switchToAutomaticFallback(source.playbackMode)) return;
+      resumeAfterSourceChangeRef.current = null;
       setErrorState({
         code: 'STREAM_FAILED',
         message: t.player.streamStartFailed,
@@ -622,21 +769,32 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
         typeof video.webkitAudioDecodedByteCount === 'number' &&
         video.webkitAudioDecodedByteCount === 0
       ) {
+        automaticFallbackModesTriedRef.current = new Set([
+          source.playbackMode,
+          compatibilityMode,
+        ]);
+        automaticFallbackPendingModeRef.current = compatibilityMode;
         suppressNextEpisode();
-        resumeAfterSourceChangeRef.current = 'audio';
+        resumeAfterSourceChangeRef.current = compatibilityMode;
+        const playbackPosition = Math.max(
+          0,
+          video.currentTime + timelineOffset - AUDIO_COMPATIBILITY_REWIND_SECONDS,
+        );
         dispatchSource({
           type: 'setMode',
-          playbackMode: 'audio',
-          offsetSeconds: Math.floor(currentTime),
+          playbackMode: compatibilityMode,
+          offsetSeconds: Math.floor(playbackPosition),
         });
       }
     }, AUDIO_COMPATIBILITY_PROBE_MS);
   }, [
     clearAudioCompatibilityCheck,
-    currentTime,
+    compatibilityMode,
     dispatchSource,
     isMuted,
+    source.playbackMode,
     suppressNextEpisode,
+    timelineOffset,
     useTranscode,
     volume,
   ]);
@@ -668,6 +826,7 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
     } else {
       previousSkipBreakpointPositionRef.current = playbackPosition;
     }
+    latestPlaybackStateRef.current.position = playbackPosition;
     setCurrentTime(playbackPosition);
 
     // Safari can emit a transient waiting/stalled event while it still has a
@@ -879,6 +1038,7 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
   }, [handleWaiting]);
 
   const handlePlaying = useCallback(() => {
+    latestPlaybackStateRef.current.isPlaying = true;
     const now = performance.now();
     if (!firstFrameReportedRef.current) {
       firstFrameReportedRef.current = true;
@@ -919,37 +1079,20 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
       return;
     }
 
-    // Safari reports unsupported containers/codecs as a generic media error.
-    // Retry once with full H.264/AAC compatibility transcoding; if that also
-    // fails, show the actionable player error.
-    if (source.playbackMode === 'direct' || source.playbackMode === 'audio') {
-      const fallbackMode: PlaybackMode = isSafari ? 'hls' : 'full';
-      suppressNextEpisode();
-      resumeAfterSourceChangeRef.current = isPlaying ? fallbackMode : null;
-      setErrorState(null);
-      dispatchSource({
-        type: 'setMode',
-        playbackMode: fallbackMode,
-        offsetSeconds: Math.floor(currentTime),
-      });
-      return;
-    }
+    if (switchToAutomaticFallback(source.playbackMode)) return;
 
+    resumeAfterSourceChangeRef.current = null;
     setErrorState({
       code: 'STREAM_FAILED',
       message: t.player.streamFailed,
       isRetryable: true,
     });
   }, [
-    currentTime,
     handleHlsSourceError,
-    dispatchSource,
-    isPlaying,
-    isSafari,
     reportTelemetry,
     setErrorState,
     source.playbackMode,
-    suppressNextEpisode,
+    switchToAutomaticFallback,
   ]);
 
   const handleVideoEnded = () => {
@@ -993,13 +1136,28 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
     setHlsPlaybackIntent(true);
     video.play().catch((err: Error) => {
       if (err.name !== 'NotSupportedError') return;
+      if (
+        switchToAutomaticFallback(
+          source.playbackMode,
+          Number.isFinite(video.currentTime) ? video.currentTime : undefined,
+          true,
+        )
+      ) {
+        return;
+      }
       setErrorState({
         code: 'CODEC_NOT_SUPPORTED',
         message: t.player.codecUnsupported,
         isRetryable: false,
       });
     });
-  }, [setHlsPlaybackIntent, isPlaying, setErrorState]);
+  }, [
+    isPlaying,
+    setErrorState,
+    setHlsPlaybackIntent,
+    source.playbackMode,
+    switchToAutomaticFallback,
+  ]);
 
   const skipBy = useCallback(
     (deltaSeconds: number) => {
@@ -1089,11 +1247,16 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
 
   const handleToggleTranscode = () => {
     const video = videoRef.current;
-    const compatibilityMode: PlaybackMode = recommendedMode;
+    const playbackPosition =
+      video && Number.isFinite(video.currentTime)
+        ? video.currentTime + timelineOffset
+        : currentTime;
     const nextMode: PlaybackMode =
       source.playbackMode === compatibilityMode ? 'direct' : compatibilityMode;
 
     suppressNextEpisode();
+    automaticFallbackModesTriedRef.current = new Set([nextMode]);
+    automaticFallbackPendingModeRef.current = null;
     resumeAfterSourceChangeRef.current =
       isPlaying || Boolean(video && !video.paused) ? nextMode : null;
 
@@ -1101,14 +1264,14 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
       dispatchSource({
         type: 'setMode',
         playbackMode: nextMode,
-        offsetSeconds: Math.floor(currentTime),
+        offsetSeconds: Math.floor(playbackPosition),
       });
       return;
     }
 
     // Going back to direct playback restores the absolute timeline, so the
     // current position has to be re-applied once the element reloads.
-    recoveryPositionRef.current = currentTime;
+    recoveryPositionRef.current = playbackPosition;
     dispatchSource({ type: 'setMode', playbackMode: 'direct', offsetSeconds: 0 });
   };
 
@@ -1118,20 +1281,27 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
     const nextStreamIndex = streamIndex ?? preferredStreamIndex;
     const currentStreamIndex = source.selectedAudioTrackIndex ?? preferredStreamIndex;
     if (
-      streamIndex === source.selectedAudioTrackIndex ||
-      (streamIndex === null && source.selectedAudioTrackIndex === null) ||
-      (streamIndex !== null && nextStreamIndex === currentStreamIndex)
+      source.playbackMode !== 'direct' &&
+      (streamIndex === source.selectedAudioTrackIndex ||
+        (streamIndex === null && source.selectedAudioTrackIndex === null) ||
+        (streamIndex !== null && nextStreamIndex === currentStreamIndex))
     ) {
       return;
     }
 
-    const nextMode = source.playbackMode === 'direct' ? recommendedMode : source.playbackMode;
+    const nextMode = source.playbackMode === 'direct' ? compatibilityMode : source.playbackMode;
     suppressNextEpisode();
+    automaticFallbackModesTriedRef.current = new Set([nextMode]);
+    automaticFallbackPendingModeRef.current = null;
     resumeAfterSourceChangeRef.current =
       isPlaying || Boolean(video && !video.paused) ? nextMode : null;
     setIsBuffering(true);
     setConnectionMessage(t.player.audioTracks.switching);
-    source.selectAudioTrack(streamIndex, Math.floor(currentTime), nextMode);
+    const playbackPosition =
+      video && Number.isFinite(video.currentTime)
+        ? video.currentTime + timelineOffset
+        : currentTime;
+    source.selectAudioTrack(streamIndex, Math.floor(playbackPosition), nextMode);
   };
 
   const cueStyle = useMemo(
@@ -1186,12 +1356,13 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
       </div>
 
       {/* Buffering Center Spinner */}
-      {isBuffering && (
+      {(isBuffering || shouldDelayPlaybackForPlan) && (
         <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center">
           <div className="flex flex-col items-center gap-3 rounded-2xl border border-zinc-800 bg-zinc-950/80 px-6 py-5 backdrop-blur-md">
             <Loader2 className="h-10 w-10 animate-spin text-brand-500" />
             <span className="text-xs font-semibold text-zinc-300">
-              {connectionMessage || t.player.buffering}
+              {connectionMessage ||
+                (shouldDelayPlaybackForPlan ? t.player.audioTracks.loading : t.player.buffering)}
             </span>
           </div>
         </div>
@@ -1200,12 +1371,18 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
       {/* eslint-disable-next-line jsx-a11y/media-has-caption -- caption tracks are rendered below from the resolved subtitle list */}
       <video
         ref={videoRef}
-        src={source.playbackMode === 'hls' && !isSafari ? undefined : source.sourceUrl}
+        src={
+          shouldDelayPlaybackForPlan || (source.playbackMode === 'hls' && !isSafari)
+            ? undefined
+            : source.sourceUrl
+        }
         onPlay={() => {
+          latestPlaybackStateRef.current.isPlaying = true;
           setIsPlaying(true);
           checkForUnsupportedAudio();
         }}
         onPause={() => {
+          if (!videoRef.current?.error) latestPlaybackStateRef.current.isPlaying = false;
           setIsPlaying(false);
           clearAudioCompatibilityCheck();
         }}
@@ -1327,10 +1504,6 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
           error={errorState}
           retryLabel={source.playbackMode === 'hls' ? t.player.error.retryStream : undefined}
           onRetry={handleRetry}
-          onEnableTranscode={() => {
-            dispatchSource({ type: 'setMode', playbackMode: isSafari ? 'hls' : 'audio' });
-            handleRetry();
-          }}
         />
       )}
 
@@ -1341,6 +1514,7 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
         }`}
       >
         <PlayerControls
+          key={active.driveFileId || media.id}
           mediaId={media.id}
           previewDriveFileId={active.driveFileId || undefined}
           seasonNumber={active.seasonNumber}
@@ -1356,16 +1530,29 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
           preferredAudioLanguage={audioTrackCatalog?.preferredLanguage || 'pt-BR'}
           recommendedAudioTrackIndex={audioTrackCatalog?.recommendedStreamIndex ?? null}
           selectedAudioTrackIndex={source.selectedAudioTrackIndex}
+          audioTrackCatalogStatus={audioTrackCatalogStatus}
+          onRetryAudioTracks={() => audioTrackCatalogQuery.refetch()}
           canDisableCompatibilityMode={
-            audioTrackCatalog
-              ? audioTracks.length <= 1 || activeAudioTrack?.isDefault === true
-              : false
+            audioTrackCatalogStatus === 'ready' &&
+            !(
+              getBrowserFamily(isSafari) === 'chromium' &&
+              activeAudioTrack &&
+              requiresChromiumAudioCompatibility(activeAudioTrack.codec)
+            ) &&
+            (audioTracks.length <= 1 || activeAudioTrack?.isDefault === true)
+          }
+          compatibilityModeDisabledMessage={
+            audioTrackCatalogStatus === 'loading'
+              ? t.player.audioTracks.loading
+              : audioTrackCatalogStatus === 'error'
+                ? t.player.audioTracks.unavailable
+                : t.player.controls.transcodeRequiredForAudio
           }
           subtitles={resolvedSubtitles}
           activeSubtitleId={activeSubtitleId}
           hasPreviousEpisode={!!active.previousEpisode}
           hasNextEpisode={!!active.nextEpisode}
-          useTranscode={useTranscode}
+          useTranscode={useTranscode && !shouldDelayPlaybackForPlan}
           qualityPreference={source.qualityPreference}
           effectiveQuality={source.effectiveQuality}
           showQualityControl={source.playbackMode === 'full'}

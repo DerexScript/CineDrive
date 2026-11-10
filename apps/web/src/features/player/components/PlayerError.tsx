@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, RefreshCw, Film } from 'lucide-react';
+import { AlertTriangle, Film } from 'lucide-react';
 import type { PlayerErrorState } from '../types/player';
 import { t } from '../../../i18n';
 
@@ -7,10 +7,9 @@ interface PlayerErrorProps {
   error: PlayerErrorState;
   onRetry: () => void;
   retryLabel?: string;
-  onEnableTranscode?: () => void;
 }
 
-export const PlayerError: React.FC<PlayerErrorProps> = ({ error, onRetry, retryLabel, onEnableTranscode }) => {
+export const PlayerError: React.FC<PlayerErrorProps> = ({ error, onRetry, retryLabel }) => {
   const isCodecError = error.code === 'CODEC_NOT_SUPPORTED';
 
   return (
@@ -31,22 +30,12 @@ export const PlayerError: React.FC<PlayerErrorProps> = ({ error, onRetry, retryL
         </p>
 
         <div className="flex flex-col gap-2 pt-2">
-          {onEnableTranscode && (
-            <button
-              onClick={onEnableTranscode}
-              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold rounded-xl shadow-lg shadow-brand-500/20 transition-all"
-            >
-              <RefreshCw className="w-4 h-4" />
-              {t.player.error.enableTranscode}
-            </button>
-          )}
-
           {error.isRetryable && (
             <button
               onClick={onRetry}
               className="inline-flex items-center justify-center gap-2 px-5 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs font-medium rounded-xl transition-all"
             >
-              {retryLabel || t.player.error.retryDirect}
+              {retryLabel || t.player.error.retryPlayback}
             </button>
           )}
         </div>

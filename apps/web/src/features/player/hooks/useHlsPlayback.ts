@@ -9,7 +9,11 @@ type UseHlsPlaybackOptions = {
   active: boolean;
   native?: boolean;
   onUnsupported: () => void;
-  onFatalError: () => void;
+  onFatalError: (
+    positionSeconds: number,
+    playbackIntent: boolean,
+    fallbackAllowed: boolean,
+  ) => void;
   onRecovering?: (attempt: number, max: number) => void;
   onRecovered?: () => void;
 };
@@ -83,7 +87,7 @@ export const useHlsPlayback = ({
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (!data.fatal || disposed) return;
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-          if ([401, 403].includes(data.response?.code ?? 0)) recovery.fail();
+          if ([401, 403].includes(data.response?.code ?? 0)) recovery.fail(false);
           else recovery.requestRecovery('network');
           return;
         }

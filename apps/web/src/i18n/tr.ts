@@ -1054,10 +1054,9 @@ export const tr = {
       codecTitle: 'Video Biçimi Desteklenmiyor',
       genericTitle: 'Oynatma Hatası',
       codecBody:
-        'Bu videonun biçimi tarayıcınız tarafından doğrudan desteklenmiyor. Lütfen aşağıdaki Ses/Safari Uyum Modunu etkinleştirin.',
+        'Tarayıcınız bu biçimi doğrudan oynatamıyor ve otomatik uyumluluk denemeleri başarısız oldu.',
       genericBody: 'Video akışı yüklenirken bir hata oluştu.',
-      enableTranscode: 'Ses / Safari Uyum Modunda Oynat',
-      retryDirect: 'Doğrudan Tekrar Dene',
+      retryPlayback: 'Tekrar dene',
       retryStream: 'Akışı Tekrar Dene',
     },
 
@@ -1088,6 +1087,8 @@ export const tr = {
     },
 
     audioTracks: {
+      loading: 'Ses parçaları yükleniyor…',
+      unavailable: 'Ses parçaları yüklenemedi. Yeniden denemek için seçin.',
       heading: 'Ses Parçası',
       usePreferred: 'Tercih edilen dili kullan',
       defaultTrack: 'Varsayılan parça',
