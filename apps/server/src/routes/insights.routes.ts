@@ -1,8 +1,13 @@
 import type { FastifyPluginAsync } from 'fastify';
+import fs from 'node:fs/promises';
 import { ownedLibraryFilter, ownedMediaFilter } from '../utils/library-access.js';
 import type { DuplicateFileDto, MediaHealthDto } from '@cinedrive/shared';
 import { buildPlaybackPlan, type PlaybackMode } from '../services/playback-plan.service.js';
-import { MediaProbeService } from '../services/media-probe.service.js';
+import { MediaProbeService, type MediaProbeResult } from '../services/media-probe.service.js';
+import {
+  buildGoogleDriveAudioTrackFingerprint,
+  buildLocalAudioTrackFingerprint,
+} from '../services/audio-track-catalog.service.js';
 import { resolveSafeLocalFile } from '../services/local-folder-validation.js';
 
 const INSIGHTS_PAGE_SIZE = 500;
@@ -545,16 +550,18 @@ export const insightsRoutes: FastifyPluginAsync = async (fastify) => {
 
       activeReanalysis.add(driveFile.id);
       try {
-        let metadata;
+        let probeResult: MediaProbeResult;
+        let localStat: Awaited<ReturnType<typeof fs.stat>> | null = null;
         if (driveFile.storageType === 'local' && driveFile.localFilePath) {
           const localFilePath = await resolveSafeLocalFile(
             driveFile.library.localFolderPath,
             driveFile.localFilePath,
           );
-          metadata = await mediaProbeService.probeLocalFile(localFilePath);
+          localStat = await fs.stat(localFilePath);
+          probeResult = await mediaProbeService.probeLocalFile(localFilePath);
         } else {
           const { accessToken } = await fastify.driveAccessService.getAccess(userId, driveFile);
-          metadata = await mediaProbeService.probeRemoteFile({
+          probeResult = await mediaProbeService.probeRemoteFile({
             name: driveFile.name,
             size: driveFile.size || 0n,
             readRange: (start, end) =>
@@ -567,9 +574,25 @@ export const insightsRoutes: FastifyPluginAsync = async (fastify) => {
           });
         }
 
+        const audioTracksFingerprint = localStat
+          ? buildLocalAudioTrackFingerprint(localStat.size, localStat.mtimeMs)
+          : buildGoogleDriveAudioTrackFingerprint(
+              driveFile.size,
+              driveFile.modifiedTime,
+              driveFile.md5Checksum,
+            );
+        if (!audioTracksFingerprint) throw new Error('AUDIO_TRACK_FILE_SIZE_UNAVAILABLE');
+
         await fastify.prisma.driveFile.update({
           where: { id: driveFile.id },
-          data: metadata,
+          data: {
+            ...probeResult.technicalMetadata,
+            audioTracksJson: JSON.stringify(probeResult.audioTracks),
+            audioTracksFingerprint,
+            ...(localStat
+              ? { size: BigInt(localStat.size), modifiedTime: localStat.mtime }
+              : {}),
+          },
         });
         invalidateMediaHealthInventory(userId);
         return reply.status(200).send({

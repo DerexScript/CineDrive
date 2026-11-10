@@ -31,21 +31,29 @@ export interface AudioTrackMetadata {
   isDefault: boolean;
 }
 
+export interface MediaProbeResult {
+  technicalMetadata: MediaTechnicalMetadata;
+  audioTracks: AudioTrackMetadata[];
+}
+
 const PROBE_TIMEOUT_MS = 15_000;
 const REMOTE_HEAD_BYTES = 8 * 1024 * 1024;
 const REMOTE_TAIL_BYTES = 4 * 1024 * 1024;
 
 export class MediaProbeService {
-  public async probeLocalFile(inputPath: string): Promise<MediaTechnicalMetadata> {
+  public async probeLocalFile(inputPath: string): Promise<MediaProbeResult> {
     const stderr = await this.runProbe(inputPath);
-    return this.parseProbeOutput(stderr, inputPath);
+    return {
+      technicalMetadata: this.parseProbeOutput(stderr, inputPath),
+      audioTracks: this.parseAudioTracks(stderr),
+    };
   }
 
   public async probeRemoteFile(options: {
     name: string;
     size: bigint;
     readRange: (start: number, end: number) => Promise<Buffer>;
-  }): Promise<MediaTechnicalMetadata> {
+  }): Promise<MediaProbeResult> {
     if (options.size <= 0n || options.size > BigInt(Number.MAX_SAFE_INTEGER)) {
       throw new Error('INVALID_REMOTE_MEDIA_SIZE');
     }
@@ -73,7 +81,10 @@ export class MediaProbeService {
       }
 
       const stderr = await this.runProbe(tempPath);
-      return this.parseProbeOutput(stderr, options.name);
+      return {
+        technicalMetadata: this.parseProbeOutput(stderr, options.name),
+        audioTracks: this.parseAudioTracks(stderr),
+      };
     } finally {
       await rm(tempDirectory, { recursive: true, force: true });
     }

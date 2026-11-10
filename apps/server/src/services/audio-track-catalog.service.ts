@@ -3,13 +3,14 @@ import type { FastifyInstance } from 'fastify';
 import type { AudioTrackMetadata } from './media-probe.service.js';
 import { MediaProbeService } from './media-probe.service.js';
 import type { ResolvedDriveFile } from '../routes/media/shared.js';
+import type { PreferredAudioPlaybackSelection } from './playback-plan.service.js';
 
 export type PreferredAudioLanguage = 'pt-BR' | 'pt-PT' | 'en' | 'auto';
 
 const mediaProbe = new MediaProbeService();
 const pendingProbes = new Map<string, Promise<AudioTrackMetadata[]>>();
 
-const parseCachedAudioTracks = (value: string | null): AudioTrackMetadata[] | null => {
+export const parseCachedAudioTracks = (value: string | null): AudioTrackMetadata[] | null => {
   if (!value) return null;
   try {
     const parsed: unknown = JSON.parse(value);
@@ -32,19 +33,36 @@ const parseCachedAudioTracks = (value: string | null): AudioTrackMetadata[] | nu
   }
 };
 
+export const buildLocalAudioTrackFingerprint = (
+  size: number | bigint,
+  modifiedTime: Date | number,
+) => {
+  const modifiedTimeMs = modifiedTime instanceof Date ? modifiedTime.getTime() : modifiedTime;
+  return `local:${size}:${Math.trunc(modifiedTimeMs)}`;
+};
+
+export const buildGoogleDriveAudioTrackFingerprint = (
+  size: bigint | null,
+  modifiedTime: Date | null,
+  md5Checksum: string | null,
+) =>
+  size === null
+    ? null
+    : ['gdrive', size.toString(), modifiedTime?.toISOString() || '', md5Checksum || ''].join(':');
+
 const getFingerprint = async (file: ResolvedDriveFile, localFilePath?: string) => {
   if (localFilePath) {
     const stat = await fs.stat(localFilePath);
-    return `local:${stat.size}:${Math.trunc(stat.mtimeMs)}`;
+    return buildLocalAudioTrackFingerprint(stat.size, stat.mtimeMs);
   }
 
-  if (file.size === null) throw new Error('AUDIO_TRACK_FILE_SIZE_UNAVAILABLE');
-  return [
-    'gdrive',
-    file.size.toString(),
-    file.modifiedTime?.toISOString() || '',
-    file.md5Checksum || '',
-  ].join(':');
+  const fingerprint = buildGoogleDriveAudioTrackFingerprint(
+    file.size,
+    file.modifiedTime,
+    file.md5Checksum,
+  );
+  if (!fingerprint) throw new Error('AUDIO_TRACK_FILE_SIZE_UNAVAILABLE');
+  return fingerprint;
 };
 
 /** Probe on demand, store by file version, and coalesce simultaneous requests. */
@@ -153,6 +171,25 @@ export const choosePreferredAudioTrack = (
     return sameLanguage.find((track) => track.isDefault) || sameLanguage[0]!;
   }
   return tracks.find((track) => track.isDefault) || tracks[0]!;
+};
+
+export const buildPreferredAudioPlaybackSelection = (
+  tracks: AudioTrackMetadata[] | null,
+  preferredLanguage: PreferredAudioLanguage,
+): PreferredAudioPlaybackSelection => {
+  const preferredTrack = tracks
+    ? choosePreferredAudioTrack(tracks, preferredLanguage)
+    : null;
+  const defaultTrack = tracks?.find((track) => track.isDefault) || tracks?.[0] || null;
+
+  return {
+    catalogKnown: tracks !== null,
+    hasAudio: (tracks?.length || 0) > 0,
+    codec: preferredTrack?.codec || null,
+    isDefault:
+      tracks !== null &&
+      (tracks.length === 0 || preferredTrack?.streamIndex === defaultTrack?.streamIndex),
+  };
 };
 
 export type AudioTrackRequest = { valid: true; streamIndex?: number } | { valid: false };

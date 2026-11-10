@@ -12,6 +12,7 @@ import {
   type MetadataEnrichmentTarget,
 } from './metadata-enrichment.service.js';
 import { MediaProbeService } from './media-probe.service.js';
+import { buildGoogleDriveAudioTrackFingerprint } from './audio-track-catalog.service.js';
 import { runWithConcurrency } from '../utils/concurrency.js';
 import { MusicLibraryService } from './music-library.service.js';
 import { isAudioFilename, isPlaylistFilename } from './music-metadata.service.js';
@@ -714,6 +715,7 @@ export class LibraryScanService {
       name: string;
       size: string;
       fileId: string;
+      audioTracksFingerprint: string;
     }> = [];
     const pendingMetadata = new Map<string, MetadataEnrichmentTarget>();
     const queueMetadata = (target: MetadataEnrichmentTarget) => {
@@ -740,12 +742,13 @@ export class LibraryScanService {
         if (driveFile.isNew) added++;
         else if (driveFile.sourceChanged) updated++;
 
-        if (driveFile.needsMediaAnalysis && video.size) {
+        if (driveFile.needsMediaAnalysis && video.size && driveFile.audioTracksFingerprint) {
           pendingProbes.push({
             driveFileId: driveFile.record.id,
             name: video.name,
             size: String(video.size),
             fileId: video.id,
+            audioTracksFingerprint: driveFile.audioTracksFingerprint,
           });
         }
 
@@ -1127,7 +1130,7 @@ export class LibraryScanService {
         try {
           signal.throwIfAborted();
           await this.scanLifecycle.heartbeat(scanId);
-          const technicalMetadata = await this.mediaProbeService.probeRemoteFile({
+          const probeResult = await this.mediaProbeService.probeRemoteFile({
             name: probe.name,
             size: BigInt(probe.size),
             readRange: (start, end) =>
@@ -1147,7 +1150,11 @@ export class LibraryScanService {
           signal.throwIfAborted();
           await this.prisma.driveFile.update({
             where: { id: probe.driveFileId },
-            data: technicalMetadata,
+            data: {
+              ...probeResult.technicalMetadata,
+              audioTracksJson: JSON.stringify(probeResult.audioTracks),
+              audioTracksFingerprint: probe.audioTracksFingerprint,
+            },
           });
         } catch (error) {
           if (signal.aborted || isScanInterruptedError(error)) throw error;
@@ -1162,6 +1169,8 @@ export class LibraryScanService {
                   error instanceof Error
                     ? error.message.slice(0, 500)
                     : 'REMOTE_MEDIA_PROBE_FAILED',
+                audioTracksJson: null,
+                audioTracksFingerprint: probe.audioTracksFingerprint,
               },
             })
             .catch(() => {});
@@ -1269,9 +1278,15 @@ export class LibraryScanService {
       throw new Error('DRIVE_FILE_LIBRARY_CONFLICT');
     }
     const nextModifiedTime = file.modifiedTime ? new Date(file.modifiedTime) : null;
+    const nextSize = file.size ? BigInt(file.size) : null;
+    const audioTracksFingerprint = buildGoogleDriveAudioTrackFingerprint(
+      nextSize,
+      nextModifiedTime,
+      file.md5Checksum || null,
+    );
     const sourceChanged =
       !!existing &&
-      (existing.size !== (file.size ? BigInt(file.size) : null) ||
+      (existing.size !== nextSize ||
         existing.modifiedTime?.getTime() !== nextModifiedTime?.getTime() ||
         existing.md5Checksum !== (file.md5Checksum || null));
 
@@ -1287,7 +1302,7 @@ export class LibraryScanService {
         parentDriveFileId: file.parents?.[0] || null,
         name: file.name,
         mimeType: file.mimeType,
-        size: file.size ? BigInt(file.size) : null,
+        size: nextSize,
         modifiedTime: nextModifiedTime,
         md5Checksum: file.md5Checksum || null,
         status: 'active',
@@ -1298,7 +1313,7 @@ export class LibraryScanService {
         driveScanSourceId,
         name: file.name,
         mimeType: file.mimeType,
-        size: file.size ? BigInt(file.size) : null,
+        size: nextSize,
         modifiedTime: nextModifiedTime,
         md5Checksum: file.md5Checksum || null,
         status: 'active',
@@ -1319,6 +1334,8 @@ export class LibraryScanService {
               mediaWidth: null,
               mediaHeight: null,
               mediaDuration: null,
+              audioTracksJson: null,
+              audioTracksFingerprint: null,
             }
           : {}),
       },
@@ -1329,7 +1346,11 @@ export class LibraryScanService {
       record,
       isNew: result.created,
       sourceChanged,
-      needsMediaAnalysis: !existing?.mediaAnalyzedAt || sourceChanged,
+      audioTracksFingerprint,
+      needsMediaAnalysis:
+        !existing?.mediaAnalyzedAt ||
+        sourceChanged ||
+        (!!audioTracksFingerprint && existing.audioTracksFingerprint !== audioTracksFingerprint),
     };
   }
 

@@ -1,12 +1,13 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import type { PrismaClient } from '@cinedrive/prisma';
+import type { Prisma, PrismaClient } from '@cinedrive/prisma';
 import { normalizeSubtitleStem, parseMediaFilename } from '@cinedrive/shared';
 import {
   MetadataEnrichmentService,
   type MetadataEnrichmentTarget,
 } from './metadata-enrichment.service.js';
 import { MediaProbeService } from './media-probe.service.js';
+import { buildLocalAudioTrackFingerprint } from './audio-track-catalog.service.js';
 import { MusicLibraryService } from './music-library.service.js';
 import { isAudioFilename } from './music-metadata.service.js';
 import { isScanInterruptedError, type ScanLifecycleService } from './scan-lifecycle.service.js';
@@ -208,10 +209,23 @@ export class LocalScanService {
           const sourceChanged =
             !existingDriveFile?.modifiedTime ||
             existingDriveFile.modifiedTime.getTime() !== stat.mtime.getTime();
-          let technicalMetadata = {};
-          if (!existingDriveFile?.mediaAnalyzedAt || sourceChanged) {
+          const audioTracksFingerprint = buildLocalAudioTrackFingerprint(
+            stat.size,
+            stat.mtimeMs,
+          );
+          let technicalMetadata: Partial<Prisma.DriveFileUncheckedCreateInput> = {};
+          if (
+            !existingDriveFile?.mediaAnalyzedAt ||
+            sourceChanged ||
+            existingDriveFile.audioTracksFingerprint !== audioTracksFingerprint
+          ) {
             try {
-              technicalMetadata = await this.mediaProbeService.probeLocalFile(file.fullPath);
+              const probeResult = await this.mediaProbeService.probeLocalFile(file.fullPath);
+              technicalMetadata = {
+                ...probeResult.technicalMetadata,
+                audioTracksJson: JSON.stringify(probeResult.audioTracks),
+                audioTracksFingerprint,
+              };
             } catch (probeError) {
               if (signal.aborted || isScanInterruptedError(probeError)) throw probeError;
               technicalMetadata = {
@@ -220,6 +234,25 @@ export class LocalScanService {
                   probeError instanceof Error
                     ? probeError.message.slice(0, 500)
                     : 'MEDIA_PROBE_FAILED',
+                audioTracksJson: null,
+                audioTracksFingerprint,
+                ...(sourceChanged
+                  ? {
+                      mediaContainer: null,
+                      videoCodec: null,
+                      videoProfile: null,
+                      videoBitDepth: null,
+                      audioCodec: null,
+                      audioChannels: null,
+                      audioSampleRate: null,
+                      audioBitrate: null,
+                      audioBitDepth: null,
+                      audioLossless: null,
+                      mediaWidth: null,
+                      mediaHeight: null,
+                      mediaDuration: null,
+                    }
+                  : {}),
               };
               console.warn(
                 `[LocalScan] Teknik medya analizi başarısız: ${file.fullPath}`,
