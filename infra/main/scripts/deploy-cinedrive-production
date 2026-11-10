@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export DOCKER_CONFIG=/opt/apps/cinedrive-production/docker-auth
+
+APP_NAME=cinedrive-production
+APP_DIR=/opt/apps/cinedrive-production
+ENV_FILE="$APP_DIR/.env"
+COMPOSE_FILE="$APP_DIR/compose.yaml"
+PUBLIC_HOST='<SERVER_IP>'
+PUBLIC_PORT=52794
+IMAGE_PREFIX=production
+
+if (( EUID != 0 )); then
+    echo "Root privileges required." >&2
+    exit 1
+fi
+
+if ! IFS= read -r NEW_SHA; then
+    echo "Missing commit SHA on stdin." >&2
+    exit 1
+fi
+if [[ ! "$NEW_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+    echo "Invalid commit SHA." >&2
+    exit 1
+fi
+
+NEW_TAG="$IMAGE_PREFIX-$NEW_SHA"
+
+if [[ ! -f "$ENV_FILE" || ! -f "$COMPOSE_FILE" ]]; then
+    echo "Production .env and compose.yaml must be installed before deploy." >&2
+    exit 1
+fi
+
+cd "$APP_DIR"
+exec 9>"/run/lock/$APP_NAME-deploy.lock"
+flock -x -w 120 9
+
+if [[ "$(grep -c '^IMAGE_TAG=' "$ENV_FILE" || true)" != 1 ]]; then
+    echo "Expected exactly one IMAGE_TAG entry in $ENV_FILE." >&2
+    exit 1
+fi
+
+OLD_TAG="$(sed -n 's/^IMAGE_TAG=//p' "$ENV_FILE" | tr -d '\r')"
+if [[ "$OLD_TAG" != bootstrap && ! "$OLD_TAG" =~ ^production-[0-9a-f]{40}$ ]]; then
+    echo "Invalid current IMAGE_TAG." >&2
+    exit 1
+fi
+
+compose() {
+    local tag="$1"
+    shift
+    IMAGE_TAG="$tag" docker compose \
+        --project-name "$APP_NAME" \
+        --file "$COMPOSE_FILE" \
+        --env-file "$ENV_FILE" \
+        "$@"
+}
+
+set_tag() {
+    sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$1/" "$ENV_FILE"
+    chown root:root "$ENV_FILE"
+    chmod 600 "$ENV_FILE"
+}
+
+wait_for_http() {
+    local url="$1"
+    local attempt
+    for attempt in $(seq 1 10); do
+        if curl --fail --silent --show-error --max-time 10 \
+            --header "Host: $PUBLIC_HOST" \
+            --output /dev/null "$url"; then
+            return 0
+        fi
+        sleep 3
+    done
+    echo "Health check failed: $url" >&2
+    return 1
+}
+
+CHANGED=0
+on_exit() {
+    local status=$?
+    trap - EXIT
+
+    if (( status != 0 && CHANGED == 1 )); then
+        echo "Deployment failed. Attempting to restore the previous version..." >&2
+        if [[ "$OLD_TAG" == bootstrap ]]; then
+            if set_tag bootstrap; then
+                echo "Initial deploy failed; IMAGE_TAG reset to bootstrap. No previous image exists for rollback." >&2
+            else
+                echo "Failed to reset IMAGE_TAG after initial deployment." >&2
+            fi
+        elif set_tag "$OLD_TAG" &&
+            compose "$OLD_TAG" up --detach --pull never --wait --wait-timeout 180 &&
+            wait_for_http "http://127.0.0.1:18082/health" &&
+            wait_for_http "http://127.0.0.1:$PUBLIC_PORT/health" &&
+            wait_for_http "http://127.0.0.1:$PUBLIC_PORT/api/ready"; then
+            echo "Previous images restored: $OLD_TAG" >&2
+        else
+            echo "AUTOMATIC ROLLBACK FAILED: manual recovery is required." >&2
+        fi
+    fi
+
+    exit "$status"
+}
+trap on_exit EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+if [[ "$NEW_TAG" == "$OLD_TAG" ]]; then
+    echo "Version already deployed: $NEW_TAG"
+    exit 0
+fi
+
+echo "Validating Compose configuration for $NEW_TAG"
+compose "$NEW_TAG" config --quiet
+
+echo "Pulling server and web images for $NEW_TAG"
+compose "$NEW_TAG" pull server web
+
+if [[ "$OLD_TAG" != bootstrap ]]; then
+    echo "Ensuring rollback images are available: $OLD_TAG"
+    compose "$OLD_TAG" pull server web
+fi
+
+CHANGED=1
+set_tag "$NEW_TAG"
+compose "$NEW_TAG" up --detach --pull never --wait --wait-timeout 180
+
+wait_for_http "http://127.0.0.1:18082/health"
+wait_for_http "http://127.0.0.1:$PUBLIC_PORT/health"
+wait_for_http "http://127.0.0.1:$PUBLIC_PORT/api/ready"
+
+CHANGED=0
+echo "Deployment successful: $NEW_TAG"

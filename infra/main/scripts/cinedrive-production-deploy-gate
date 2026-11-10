@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+case "${SSH_ORIGINAL_COMMAND:-}" in
+    ping)
+        echo "cinedrive production SSH authentication OK"
+        ;;
+    deploy\ *)
+        SHA="${SSH_ORIGINAL_COMMAND#deploy }"
+        if [[ ! "$SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Invalid commit SHA." >&2
+            exit 1
+        fi
+        printf '%s\n' "$SHA" | sudo -n /usr/local/sbin/deploy-cinedrive-production
+        ;;
+    *)
+        echo "Command not allowed." >&2
+        exit 1
+        ;;
+esac
