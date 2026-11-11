@@ -2,7 +2,7 @@
 
 [Documentation](../README.md#documentation) · [Türkçe](CONFIGURATION.tr.md)
 
-Copy `.env.example` to `.env` and replace every example credential and deployment URL. Use [`.env.example`](../.env.example) for deployment defaults and the [environment schema](../packages/shared/src/schemas/env.schema.ts) for validated core settings.
+Copy [`.env.example`](../.env.example) to `.env` for local development or the root Docker Compose setup, then replace its placeholders. For the production VPS, use [`infra/main/.env.example`](../infra/main/.env.example) as the template for `infra/main/.env`. See the [environment schema](../packages/shared/src/schemas/env.schema.ts) for validated core settings.
 
 ## Core settings
 

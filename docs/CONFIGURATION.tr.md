@@ -2,7 +2,7 @@
 
 [Dokümantasyon](../README.tr.md#dokümantasyon) · [English](CONFIGURATION.md)
 
-`.env.example` dosyasını `.env` olarak kopyalayıp bütün örnek kimlik bilgilerini ve dağıtım URL'lerini değiştirin. Dağıtım varsayılanları için [`.env.example`](../.env.example), doğrulanan temel ayarlar için [ortam şemasını](../packages/shared/src/schemas/env.schema.ts) kullanın.
+Yerel geliştirme veya kök Docker Compose kurulumu için [`.env.example`](../.env.example) dosyasını `.env` olarak kopyalayıp yer tutucuları değiştirin. Production VPS için `infra/main/.env` dosyasını [`infra/main/.env.example`](../infra/main/.env.example) şablonundan oluşturun. Doğrulanan temel ayarlar için [ortam şemasına](../packages/shared/src/schemas/env.schema.ts) bakın.
 
 ## Temel ayarlar
 
