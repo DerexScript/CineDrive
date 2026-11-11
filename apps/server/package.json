@@ -40,7 +40,7 @@
     "pino": "^10.3.1",
     "prisma": "^7.10.0",
     "sharp": "^0.35.5",
-    "zod": "^4.5.4"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@types/ffmpeg-static": "^5.1.0",

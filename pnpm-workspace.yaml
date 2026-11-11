@@ -18,6 +18,12 @@ overrides:
   brace-expansion@5.0.9: 5.0.11
   # Transitive tooling fix; remove after ESLint's dependency range advances.
   js-yaml@4.3.0: 4.3.2
+  # GHSA-mrhx-c7xc-m3w5: keep direct and transitive Zod installs patched.
+  zod: 4.6.6
+  vite: 8.2.4
+  # Keep dev-tool audit fallback below the high-severity threshold.
+  source-map-js: 1.2.2
+  undici: 7.30.1
 allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true
