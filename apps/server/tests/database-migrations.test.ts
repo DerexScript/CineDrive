@@ -130,14 +130,15 @@ describe('production database migrations', () => {
     } as const;
     let snapshot: unknown;
     try {
-      await before.user.create({
-        data: {
-          id: 'studio-guest',
-          email: 'studio-guest@example.test',
-          name: 'Guest',
-          passwordHash: 'fixture',
-        },
-      });
+      // The current generated client writes fields such as preferredAudioLanguage
+      // that do not exist at this historical checkpoint, so seed this row with SQL.
+      await before.$executeRawUnsafe(
+        `INSERT INTO "User" ("id", "email", "name", "createdAt", "updatedAt")
+         VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+        'studio-guest',
+        'studio-guest@example.test',
+        'Guest',
+      );
       await before.musicPlaylist.create({
         select: { id: true },
         data: {
@@ -149,6 +150,7 @@ describe('production database migrations', () => {
         },
       });
       await before.musicStudio.create({
+        select: { userId: true },
         data: { userId: 'music-user', revision: 7, content: '{"families":[],"sessions":[]}' },
       });
       snapshot = {

@@ -37,7 +37,7 @@ describe('buildPlaybackPlan', () => {
     ).toMatchObject({ safari: 'hls', chromium: 'full', analyzed: true });
   });
 
-  it('remuxes H.264 MKV through HLS in Chromium without full video transcoding', () => {
+  it('converts incompatible H.264 MKV audio in Chromium without full video transcoding', () => {
     expect(
       buildPlaybackPlan({
         mediaContainer: 'mkv',
@@ -45,7 +45,7 @@ describe('buildPlaybackPlan', () => {
         audioCodec: 'dts',
         mediaAnalyzedAt: analyzedAt,
       }),
-    ).toMatchObject({ safari: 'hls', chromium: 'hls' });
+    ).toMatchObject({ safari: 'hls', chromium: 'audio' });
   });
 
   it('converts only incompatible audio when the H.264 source is already in MP4', () => {

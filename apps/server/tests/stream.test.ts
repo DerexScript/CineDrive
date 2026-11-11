@@ -220,7 +220,12 @@ describe('Video Media Streaming API Integration Tests', () => {
     const [sourceUrl, sourceOptions] = firstCall;
     expect(sourceUrl).not.toContain('mock-access-token');
     expect(JSON.stringify(sourceOptions.inputOptions)).not.toContain('mock-access-token');
-    expect(app.driveService.createMediaStream).not.toHaveBeenCalled();
+    expect(app.driveService.createMediaStream).toHaveBeenCalledWith(
+      'mock-access-token',
+      'gdrive_video_id_100',
+      expect.stringMatching(/^bytes=\d+-\d+$/),
+      expect.any(AbortSignal),
+    );
   });
 
   it('uses full video transcoding for Safari compatibility mode', async () => {
@@ -258,7 +263,12 @@ describe('Video Media Streaming API Integration Tests', () => {
         inputOptions: expect.any(Array),
       }),
     );
-    expect(app.driveService.createMediaStream).not.toHaveBeenCalled();
+    expect(app.driveService.createMediaStream).toHaveBeenCalledWith(
+      'mock-access-token',
+      'gdrive_video_id_100',
+      expect.stringMatching(/^bytes=\d+-\d+$/),
+      expect.any(AbortSignal),
+    );
   });
 
   it('restarts compatibility transcoding at the requested seek position', async () => {

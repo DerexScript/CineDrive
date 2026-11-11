@@ -18,6 +18,7 @@ describe('Prisma 7 SQLite compatibility', () => {
           "tmdbApiKey" TEXT,
           "acoustidApiKey" TEXT,
           "preferredLanguages" TEXT NOT NULL DEFAULT 'tr,en',
+          "preferredAudioLanguage" TEXT NOT NULL DEFAULT 'pt-BR',
           "musicPersonalization" TEXT NOT NULL DEFAULT '{}',
           "createdAt" DATETIME NOT NULL,
           "updatedAt" DATETIME NOT NULL,
