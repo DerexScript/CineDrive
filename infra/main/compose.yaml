@@ -62,6 +62,7 @@ services:
 volumes:
   app_data:
     name: cinedrive_app_data
+    external: true
   subtitle_cache:
     name: cinedrive_subtitle_cache
   nginx_logs:

@@ -7,25 +7,24 @@ this checkout.
 
 ## What runs on a push to main
 
-- Pull requests run the existing CI checks and the container security scan. They
-  do not publish images or connect to the VPS.
-- Each push to `main` runs the CI checks and a small gate that reads the
-  production environment variable `DEPLOY_ENABLED`.
-- Only when its value is exactly `true` and all checks pass does CI build and
-  publish server and web images as production-SHA40 tags, add SBOM/provenance
-  attestations, scan those images for fixable HIGH and CRITICAL vulnerabilities,
-  and send the tested commit SHA to the VPS through the restricted SSH command.
-- With `DEPLOY_ENABLED=false`, CI checks still run, but no images are published
-  and the VPS is not contacted. GitHub still records the small `production`
-  environment gate run for each push to `main`.
-- CodeQL remains an independent source-security workflow. Container Security
-  remains for pull requests and its weekly scan; its main-push image build was
-  removed because CI scans the images it will deploy.
-- The existing Release workflow remains a separate optional release path for
-  version tags, manual validation, and selected pull requests. It does not run
-  on ordinary pushes to main. Its GHCR namespace still names the upstream
-  owner, so do not use its tag-publishing path from this fork until that
-  separate workflow is retargeted.
+- Pull requests run the full CI suite, including the browser matrix, and the
+  container security scan. CI can also be started manually. These checks do not
+  publish production images or connect to the VPS.
+- Each push to `main` runs the separate `Deploy production` workflow. Its first
+  job reads the production environment variable `DEPLOY_ENABLED`.
+- When the value is exactly `true`, the workflow builds and publishes the
+  server and web images as immutable production-SHA40 tags, then sends that
+  commit SHA through the restricted SSH command. The VPS deploy script updates
+  the Compose services and verifies local and public health endpoints; it
+  restores the previous images if a later deployment fails.
+- With `DEPLOY_ENABLED=false`, only the small switch job runs; no image build,
+  publish, or VPS connection occurs.
+- Deployment does not wait for CI, CodeQL, the browser matrix, or container
+  scanning. CodeQL and Container Security remain on pull requests and their
+  scheduled scans, independent of pushes to `main`.
+- The inherited Release workflow is separate and does not participate in the
+  `main` deployment. Its tag-based publishing flow is not configured for this
+  VPS and should not be used for this deployment.
 
 GitHub Actions has been enabled for this fork. Workflow files cannot change
 that repository setting.
@@ -72,6 +71,18 @@ the new `cinedrive_app_data` volume. The source and imported database hashes
 matched; the database is owned by `node:node` with mode 0640. Keep both backups
 until the first image deployment, migrations, and health checks succeed. No
 CineDrive application containers are running yet.
+
+The Compose file treats `cinedrive_app_data` as external because it was created
+and seeded before the first deployment; Compose will use it without managing
+its lifecycle.
+
+You reported copying the updated `infra/main/compose.yaml` to the VPS. Before
+the first deployment, validate the copied file there and confirm the existing
+database volume remains external:
+
+    cd /opt/apps/cinedrive-production
+    docker compose --env-file .env -f compose.yaml config --quiet
+    docker volume inspect cinedrive_app_data
 
     uname -m
     dpkg --print-architecture
@@ -258,8 +269,9 @@ the matching known_hosts entry in GitHub.
 
 ## GitHub environment setup
 
-GitHub Actions is enabled and the `production` environment is configured. It
-contains the environment variable `DEPLOY_ENABLED=false` and these secrets:
+GitHub Actions is enabled and the `production` environment is configured. Its
+`DEPLOY_ENABLED` variable must be exactly `true` to deploy or `false` to skip
+image publication and VPS access. The environment also contains these secrets:
 
 - VPS_SSH_DEPLOY_KEY: the dedicated private key; never commit it.
 - VPS_SSH_KNOWN_HOSTS: the host key checked against the VPS fingerprint.
@@ -269,12 +281,10 @@ contains the environment variable `DEPLOY_ENABLED=false` and these secrets:
 
 The workflow reads `DEPLOY_ENABLED` in a lightweight production environment
 gate; an unset or invalid value fails closed. With `false`, pushes to `main`
-run checks but do not publish images or contact the VPS. Once you are ready for
-the first deployment, change the environment variable to `true`; the next push
-to `main` runs all checks, publishes and scans the images, then deploys that
-exact commit. The environment may keep its branch/tag setting at `No restriction`:
-workflow conditions limit the gate, image publishing, and deployment to pushes
-to `main`.
+only read the switch and do not build images or contact the VPS. With `true`, the
+next push builds and publishes both images, then deploys that exact commit. The
+environment may keep its branch/tag setting at `No restriction`: workflow
+conditions limit the gate, image publishing, and deployment to pushes to `main`.
 
 The workflow uses GITHUB_TOKEN only to publish packages to this repository's
 GHCR namespace. GHCR images should remain private; the VPS uses its own

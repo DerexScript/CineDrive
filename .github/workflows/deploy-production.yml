@@ -1,0 +1,157 @@
+name: Deploy production
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production-${{ github.ref }}
+  # Finish an active deploy, then deploy the newest queued main commit.
+  cancel-in-progress: false
+
+jobs:
+  deployment-gate:
+    name: Read production deployment switch
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    environment: production
+    permissions: {}
+    outputs:
+      enabled: ${{ steps.switch.outputs.enabled }}
+
+    steps:
+      - name: Read environment deployment switch
+        id: switch
+        env:
+          DEPLOY_ENABLED: ${{ vars.DEPLOY_ENABLED }}
+        shell: bash
+        run: |
+          set -eu
+          case "$DEPLOY_ENABLED" in
+            true|false)
+              printf 'enabled=%s\n' "$DEPLOY_ENABLED" >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "DEPLOY_ENABLED must be exactly true or false in the production environment." >&2
+              exit 1
+              ;;
+          esac
+
+  publish:
+    name: Build and publish ${{ matrix.component }} image
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.deployment-gate.outputs.enabled == 'true'
+    needs: deployment-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        component: [server, web]
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish immutable image
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          file: Dockerfile.${{ matrix.component }}
+          platforms: linux/amd64
+          push: true
+          tags: ghcr.io/derexscript/cinedrive-${{ matrix.component }}:production-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.title=CineDrive ${{ matrix.component }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=production-${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=production-${{ matrix.component }}
+
+  deploy:
+    name: Deploy production
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.publish.result == 'success' &&
+      needs.deployment-gate.outputs.enabled == 'true'
+    needs: [publish, deployment-gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    permissions: {}
+
+    steps:
+      - name: Validate SSH settings and deploy the pushed commit
+        env:
+          VPS_SSH_DEPLOY_KEY: ${{ secrets.VPS_SSH_DEPLOY_KEY }}
+          VPS_SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+          VPS_SSH_HOST: ${{ secrets.VPS_SSH_HOST }}
+          VPS_SSH_PORT: ${{ secrets.VPS_SSH_PORT }}
+          VPS_SSH_USER: ${{ secrets.VPS_SSH_USER }}
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          for name in VPS_SSH_DEPLOY_KEY VPS_SSH_KNOWN_HOSTS VPS_SSH_HOST VPS_SSH_PORT VPS_SSH_USER; do
+            if [[ -z "${!name}" ]]; then
+              echo "Missing required production environment secret: $name" >&2
+              exit 1
+            fi
+          done
+
+          [[ "$VPS_SSH_HOST" =~ ^[A-Za-z0-9.-]+$ ]] || {
+            echo "VPS_SSH_HOST must be an IPv4 address or DNS name." >&2
+            exit 1
+          }
+          if [[ ! "$VPS_SSH_PORT" =~ ^[0-9]{1,5}$ ]]; then
+            echo "VPS_SSH_PORT must contain one to five digits." >&2
+            exit 1
+          fi
+          if (( 10#$VPS_SSH_PORT < 1 || 10#$VPS_SSH_PORT > 65535 )); then
+            echo "VPS_SSH_PORT must be between 1 and 65535." >&2
+            exit 1
+          fi
+          [[ "$VPS_SSH_USER" == deploy ]] || {
+            echo "VPS_SSH_USER must be deploy." >&2
+            exit 1
+          }
+
+          install -m 700 -d "$HOME/.ssh"
+          trap 'rm -f "$RUNNER_TEMP/cinedrive-production-key"' EXIT
+          printf '%s\n' "$VPS_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          printf '%s' "$VPS_SSH_DEPLOY_KEY" | sed 's/\r$//' > "$RUNNER_TEMP/cinedrive-production-key"
+          chmod 600 "$HOME/.ssh/known_hosts" "$RUNNER_TEMP/cinedrive-production-key"
+          ssh-keygen -y -f "$RUNNER_TEMP/cinedrive-production-key" > /dev/null
+
+          ssh \
+            -i "$RUNNER_TEMP/cinedrive-production-key" \
+            -p "$VPS_SSH_PORT" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            -o ConnectTimeout=15 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=6 \
+            "$VPS_SSH_USER@$VPS_SSH_HOST" \
+            "deploy $GITHUB_SHA"
