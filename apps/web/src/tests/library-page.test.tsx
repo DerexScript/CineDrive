@@ -33,7 +33,8 @@ describe('LibraryPage', () => {
 
     expect(await screen.findByRole('alert')).toBeInTheDocument();
     expect(screen.getByText(t.library.loadFailed)).toBeInTheDocument();
-    expect(screen.getByText('Sunucu hatası')).toBeInTheDocument();
+    expect(screen.getByText(t.errors.api.server)).toBeInTheDocument();
+    expect(screen.queryByText('Sunucu hatası')).not.toBeInTheDocument();
     // The misleading "no media found" empty state must not appear.
     expect(screen.queryByText(t.library.notFoundTitle)).not.toBeInTheDocument();
 

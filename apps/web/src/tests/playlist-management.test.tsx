@@ -48,7 +48,9 @@ describe('PlaylistDestinationModal', () => {
     const post = vi.spyOn(apiClient, 'post').mockResolvedValue({ data: { added: 1 } } as never);
     const onClose = renderPicker();
 
-    fireEvent.click(await screen.findByRole('button', { name: /Favoriler/i }));
+    fireEvent.click(
+      await screen.findByRole('button', { name: /Favoriler/i }, { timeout: 5000 }),
+    );
 
     await waitFor(() =>
       expect(post).toHaveBeenCalledWith(

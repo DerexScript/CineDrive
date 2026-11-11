@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { LoginPage } from '../pages/LoginPage';
 import { ProtectedRoute } from '../routes/ProtectedRoute';
 import { ApiRequestError, apiClient } from '../api/client';
+import { t } from '../i18n';
 
 const user = { id: 'qa-user', email: 'qa@example.com', name: 'QA', role: 'user', isActive: true };
 const anonymous = { authenticated: false, user: null, authMode: 'multi-user' };
@@ -106,12 +107,22 @@ describe('LoginPage Component', () => {
 
   it('shows invalid credentials without verifying or navigating', async () => {
     vi.spyOn(apiClient, 'post').mockRejectedValue(
-      new ApiRequestError(401, null, 'Invalid credentials'),
+      new ApiRequestError(
+        401,
+        {
+          error: {
+            code: 'INVALID_CREDENTIALS',
+            message: 'Invalid credentials',
+            requestId: 'req_invalid_credentials',
+          },
+        },
+        'Invalid credentials',
+      ),
     );
     const get = vi.spyOn(apiClient, 'get');
     const client = renderLogin();
     submitLogin();
-    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid credentials');
+    expect(await screen.findByRole('alert')).toHaveTextContent(t.errors.api.invalidCredentials);
     expect(get).not.toHaveBeenCalled();
     expect(client.getQueryData(['session'])).toEqual(anonymous);
     client.clear();
@@ -124,7 +135,7 @@ describe('LoginPage Component', () => {
       .mockResolvedValue({ data: authenticated } as never);
     const client = renderLogin();
     submitLogin();
-    expect(await screen.findByRole('alert')).toHaveTextContent('Session unavailable');
+    expect(await screen.findByRole('alert')).toHaveTextContent(t.errors.api.server);
     expect(screen.getByRole('button', { name: /giriş yap/i })).toBeEnabled();
     submitLogin();
     expect(await screen.findByText('Destination: /')).toBeInTheDocument();
