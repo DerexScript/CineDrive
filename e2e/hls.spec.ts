@@ -116,8 +116,16 @@ const openHlsMovie = async (page: Page, origin = '') => {
   expect(response.headers()['content-type']).toContain('application/vnd.apple.mpegurl');
   const manifest = await response.text();
   expect(manifest).toContain('#EXTM3U');
-  expect(manifest).toContain('#EXT-X-MAP:URI="init.mp4?start=0"');
-  expect(manifest).toMatch(/segment-\d{6}\.m4s\?start=0/);
+  const initUri = manifest.match(/#EXT-X-MAP:URI="([^"]+)"/)?.[1];
+  expect(initUri).toBeDefined();
+  const initUrl = new URL(initUri!, response.url());
+  expect(initUrl.searchParams.get('start')).toBe('0');
+  expect(initUrl.searchParams.get('audioTrackIndex')).toBe('1');
+  const segmentUri = manifest.match(/^(segment-\d{6}\.m4s\?[^\r\n]+)$/m)?.[1];
+  expect(segmentUri).toBeDefined();
+  const segmentUrl = new URL(segmentUri!, response.url());
+  expect(segmentUrl.searchParams.get('start')).toBe('0');
+  expect(segmentUrl.searchParams.get('audioTrackIndex')).toBe('1');
   // This fixture must still be encoding: cleanup must not pass just because a
   // tiny source naturally finished before the user left the player.
   expect(manifest).not.toContain('#EXT-X-ENDLIST');
