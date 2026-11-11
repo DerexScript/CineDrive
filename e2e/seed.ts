@@ -62,7 +62,7 @@ const renderClip = (target: string, hls = false) => {
       '-g',
       '30',
       '-c:a',
-      // MKV + PCM requires the real HLS compatibility plan on both browsers.
+      // MKV + PCM selects native HLS in WebKit; Chromium transcodes only audio.
       hls ? 'pcm_s16le' : 'aac',
       '-shortest',
       ...(hls ? [] : ['-movflags', '+faststart']),

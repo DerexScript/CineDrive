@@ -151,11 +151,17 @@ const expectNoEncoders = async (page: Page, pids: number[]) => {
 };
 
 test.describe('CineDrive HLS', () => {
+  test.beforeEach(async ({ browserName }) => {
+    test.skip(browserName !== 'webkit', 'Native HLS playback is exercised with WebKit.');
+  });
+
   // Real encoders need a first segment at each of three source windows. Keep
   // per-assertion bounds tight while allowing a slower CI host the full flow.
   test.setTimeout(60_000);
 
-  test.afterEach(async ({ page }, testInfo) => {
+  test.afterEach(async ({ page, browserName }, testInfo) => {
+    if (browserName !== 'webkit') return;
+
     // Exercise normal pagehide cleanup even after a failed assertion, so the
     // next test/project cannot inherit this player's encoder or leases.
     const stats = await hlsStats(page);

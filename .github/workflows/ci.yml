@@ -247,9 +247,9 @@ jobs:
           # Pin to a stable image; install the browser without apt dependencies.
           - browser: chromium
             os: ubuntu-24.04
-          # Media codec support is platform-dependent; test WebKit on macOS.
+          # Media codec support is platform-dependent; use the stable Intel macOS runner.
           - browser: webkit
-            os: macos-15
+            os: macos-15-intel
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
