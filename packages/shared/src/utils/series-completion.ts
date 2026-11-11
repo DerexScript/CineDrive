@@ -18,7 +18,7 @@ export const resolveSeriesCompletionSettings = (
 /**
  * Resolves a configured series completion rule to an elapsed playback time.
  * Invalid, conflicting, or duration-incompatible settings return null so the
- * existing 99% series fallback remains in effect.
+ * existing 98% series fallback remains in effect.
  */
 export const resolveSeriesCompletionAtSeconds = (
   durationSeconds: number,
@@ -32,7 +32,7 @@ export const resolveSeriesCompletionAtSeconds = (
   const fixedSeconds = settings.completeAtSeconds ?? null;
   const remainingSeconds = settings.completeBeforeEndSeconds ?? null;
 
-  // New writes reject this state. Fail closed to the regular 99% fallback if
+  // New writes reject this state. Fail closed to the regular 98% fallback if
   // an inconsistent row is encountered in an existing or manually edited DB.
   if (fixedSeconds !== null && remainingSeconds !== null) return null;
 

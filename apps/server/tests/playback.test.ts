@@ -357,7 +357,8 @@ describe('Playback & History API Integration Tests', () => {
       where: { id: episode.id },
       data: { completeAtSeconds: 4000 },
     });
-    const thresholdPastDuration = await saveEpisodeProgress(3312);
+    expect((await saveEpisodeProgress(3527)).json().progress.completed).toBe(false);
+    const thresholdPastDuration = await saveEpisodeProgress(3528);
     expect(thresholdPastDuration.json().progress.completed).toBe(true);
     expect(
       await app.prisma.watchHistory.findUnique({

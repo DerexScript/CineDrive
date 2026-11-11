@@ -3,5 +3,5 @@ export const SUPPORTED_SUBTITLE_EXTENSIONS = ['.vtt', '.srt'] as const;
 export const SUPPORTED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'] as const;
 
 export const DEFAULT_COMPLETION_THRESHOLD_PERCENT = 90;
-export const DEFAULT_SERIES_COMPLETION_THRESHOLD_PERCENT = 99;
+export const DEFAULT_SERIES_COMPLETION_THRESHOLD_PERCENT = 98;
 export const PROGRESS_UPDATE_INTERVAL_MS = 10000;
