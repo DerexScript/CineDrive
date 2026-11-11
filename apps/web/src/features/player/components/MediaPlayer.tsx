@@ -141,14 +141,13 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
       (source.selectedAudioTrackIndex ?? audioTrackCatalog?.recommendedStreamIndex),
   );
   const playbackPlanKey = `${active.driveFileId || 'missing'}:${recommendedMode}`;
-  const appliedPlaybackPlanKeyRef = useRef<string | null>(null);
   // Keep the previous source hidden only until a new plan has been applied.
   // Later mode changes are deliberate fallbacks or user selections.
   const shouldDelayPlaybackForPlan =
     isResolvingPlaybackPlan ||
     source.selectedAudioDriveFileId !== active.driveFileId ||
     (source.playbackMode !== recommendedMode &&
-      appliedPlaybackPlanKeyRef.current !== playbackPlanKey);
+      source.appliedPlaybackPlanKey !== playbackPlanKey);
 
   // --- Timers and cross-render bookkeeping -------------------------------
   const audioCompatibilityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -358,7 +357,6 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
   // --- Source lifecycle ---------------------------------------------------
   useEffect(() => {
     clearTimer(pendingSeekTimerRef);
-    appliedPlaybackPlanKeyRef.current = playbackPlanKey;
     automaticFallbackModesTriedRef.current = new Set([recommendedMode]);
     automaticFallbackPendingModeRef.current = null;
     latestPlaybackStateRef.current = { position: 0, isPlaying: false };
@@ -373,21 +371,6 @@ export const MediaPlayer: React.FC<MediaPlayerProps> = ({
     recoveryPositionRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- restart only when the file or its recommended strategy changes
   }, [active.driveFileId, recommendedMode, source.automaticQuality]);
-
-  useLayoutEffect(() => {
-    if (
-      source.selectedAudioDriveFileId === active.driveFileId &&
-      source.playbackMode === recommendedMode
-    ) {
-      appliedPlaybackPlanKeyRef.current = playbackPlanKey;
-    }
-  }, [
-    active.driveFileId,
-    playbackPlanKey,
-    recommendedMode,
-    source.playbackMode,
-    source.selectedAudioDriveFileId,
-  ]);
 
   useEffect(() => {
     nextEpisodeDismissedRef.current = false;

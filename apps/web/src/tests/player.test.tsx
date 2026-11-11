@@ -282,6 +282,13 @@ Sonraki cümle`);
     defaultOptions: { queries: { retry: false } },
   });
 
+  const directPlaybackPlan = {
+    safari: 'direct',
+    chromium: 'direct',
+    reason: 'test:direct-compatible',
+    analyzed: true,
+  } as const;
+
   const mockMovie: MediaItemType = {
     id: 'media_movie_10',
     type: 'movie',
@@ -290,6 +297,7 @@ Sonraki cümle`);
     movie: {
       id: 'movie_10_inst',
       driveFileId: 'gdrive_interstellar_file',
+      playbackPlan: directPlaybackPlan,
     },
   };
   const mockSeries: MediaItemType = {
@@ -310,6 +318,7 @@ Sonraki cümle`);
               episodeNumber: 1,
               title: 'Episode 1',
               driveFileId: 'file_1',
+              playbackPlan: directPlaybackPlan,
             },
             {
               id: 'episode_2',
@@ -317,6 +326,7 @@ Sonraki cümle`);
               episodeNumber: 2,
               title: 'Episode 2',
               driveFileId: 'file_2',
+              playbackPlan: directPlaybackPlan,
             },
           ],
         },
@@ -448,6 +458,12 @@ Sonraki cümle`);
           ...season,
           episodes: season.episodes.map((episode) => ({
             ...episode,
+            playbackPlan: {
+              safari: 'hls',
+              chromium: 'audio',
+              reason: 'test:compatibility-required',
+              analyzed: true,
+            },
             technicalMetadata: { mediaDuration: 1380, mediaHeight: 1080 },
           })),
         })),
@@ -499,7 +515,7 @@ Sonraki cümle`);
 
     video.currentTime = 1217;
     fireEvent.timeUpdate(video);
-    expect(screen.getByText(/Hemen Oynat \(5s\)/)).toBeInTheDocument();
+    expect(screen.getByText(t.player.nextEpisode.playNow(5))).toBeInTheDocument();
     await act(async () => {
       await Promise.resolve();
       await Promise.resolve();
@@ -507,7 +523,7 @@ Sonraki cümle`);
 
     for (let elapsed = 1; elapsed <= 4; elapsed += 1) {
       act(() => vi.advanceTimersByTime(1000));
-      expect(screen.getByText(new RegExp(`Hemen Oynat \\(${5 - elapsed}s\\)`))).toBeInTheDocument();
+      expect(screen.getByText(t.player.nextEpisode.playNow(5 - elapsed))).toBeInTheDocument();
       video.currentTime = 1217 + elapsed;
       fireEvent.timeUpdate(video);
     }
@@ -546,9 +562,9 @@ Sonraki cümle`);
     );
 
     expect(screen.getByText('The Narrow Way')).toBeInTheDocument();
-    expect(screen.getByText(/hemen oynat/i)).toBeInTheDocument();
+    expect(screen.getByText(t.player.nextEpisode.playNow(5))).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText(/hemen oynat/i));
+    fireEvent.click(screen.getByText(t.player.nextEpisode.playNow(5)));
     expect(onPlayNext).toHaveBeenCalledTimes(1);
   });
 
@@ -588,8 +604,8 @@ Sonraki cümle`);
       />,
     );
 
-    expect(screen.getByText(/video biçimi desteklenmiyor/i)).toBeInTheDocument();
-    expect(screen.getByText(/Ses\/Safari Uyum Modunu/i)).toBeInTheDocument();
+    expect(screen.getByText(t.player.error.codecTitle)).toBeInTheDocument();
+    expect(screen.getByText(t.player.error.codecBody)).toBeInTheDocument();
   });
 
   it('renders MediaPlayer container with video stream URL', () => {
@@ -626,7 +642,7 @@ Sonraki cümle`);
     });
 
     fireEvent.stalled(video);
-    expect(screen.queryByText('Akış tamponlanıyor…')).not.toBeInTheDocument();
+    expect(screen.queryByText(t.player.buffering)).not.toBeInTheDocument();
   });
 
   it('dismisses a stale buffering notice as soon as Safari media time advances', () => {
@@ -655,11 +671,11 @@ Sonraki cümle`);
     });
 
     fireEvent.waiting(video);
-    expect(screen.getByText('Akış tamponlanıyor…')).toBeInTheDocument();
+    expect(screen.getByText(t.player.buffering)).toBeInTheDocument();
 
     video.currentTime = 30.25;
     fireEvent.timeUpdate(video);
-    expect(screen.queryByText('Akış tamponlanıyor…')).not.toBeInTheDocument();
+    expect(screen.queryByText(t.player.buffering)).not.toBeInTheDocument();
   });
 
   it('keeps Safari on direct MP4 first and falls back to full transcode after a media error', () => {
@@ -1232,7 +1248,7 @@ Sonraki cümle`);
     Object.defineProperty(video, 'paused', { configurable: true, value: false });
     const playSpy = vi.spyOn(video, 'play').mockResolvedValue();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ses / Safari Uyum Modu' }));
+    fireEvent.click(screen.getByRole('button', { name: t.player.controls.transcodeToggle }));
     expect(video.getAttribute('src')).toBe(
       `/api/media/gdrive_interstellar_file/stream?transcode=audio&start=0&session=${hlsSessionId}`,
     );
@@ -1270,11 +1286,23 @@ Sonraki cümle`);
       preferredLanguage: 'pt-BR',
       recommendedStreamIndex: 0,
     });
+    const eac3Movie: MediaItemType = {
+      ...mockMovie,
+      movie: {
+        ...mockMovie.movie!,
+        playbackPlan: {
+          safari: 'hls',
+          chromium: 'audio',
+          reason: 'test:eac3-default-track',
+          analyzed: true,
+        },
+      },
+    };
 
     const { container } = render(
       <QueryClientProvider client={audioQueryClient}>
         <BrowserRouter>
-          <MediaPlayer media={mockMovie} />
+          <MediaPlayer media={eac3Movie} />
         </BrowserRouter>
       </QueryClientProvider>,
     );
@@ -1333,7 +1361,6 @@ Sonraki cümle`);
 
     fireEvent.loadedMetadata(video);
     fireEvent.timeUpdate(video);
-    fireEvent.click(screen.getByRole('button', { name: t.player.controls.transcodeToggle }));
     expect(video.getAttribute('src')).toBe('/api/media/file_1/stream');
 
     fireEvent.loadedMetadata(video);
@@ -1373,11 +1400,23 @@ Sonraki cümle`);
       preferredLanguage: 'pt-BR',
       recommendedStreamIndex: 0,
     });
+    const audioPlannedMovie: MediaItemType = {
+      ...mockMovie,
+      movie: {
+        ...mockMovie.movie!,
+        playbackPlan: {
+          safari: 'hls',
+          chromium: 'audio',
+          reason: 'test:preferred-audio-track',
+          analyzed: true,
+        },
+      },
+    };
 
     const { container } = render(
       <QueryClientProvider client={audioQueryClient}>
         <BrowserRouter>
-          <MediaPlayer media={mockMovie} />
+          <MediaPlayer media={audioPlannedMovie} />
         </BrowserRouter>
       </QueryClientProvider>,
     );
@@ -1456,13 +1495,16 @@ Sonraki cümle`);
       </QueryClientProvider>,
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ses / Safari Uyum Modu' }));
-    expect(container.querySelector('video')?.getAttribute('src')).toBe(
-      '/api/media/gdrive_interstellar_file/stream',
-    );
+    const compatibilityButton = screen.getByRole('button', {
+      name: t.player.controls.transcodeRequiredForAudio,
+    });
+    expect(compatibilityButton).toBeDisabled();
+    const videoSource = container.querySelector('video')?.getAttribute('src');
+    expect(videoSource).toContain('transcode=full');
+    expect(videoSource).not.toContain('transcode=audio');
   });
 
-  it('preserves a paused HLS position on the timeline across native recovery and manual retry', () => {
+  it('preserves the paused HLS position when native recovery falls back to audio compatibility', () => {
     vi.useFakeTimers();
     vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue(
       'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/18.0 Safari/605.1.15',
@@ -1494,7 +1536,7 @@ Sonraki cümle`);
     fireEvent.error(video);
     act(() => vi.advanceTimersByTime(1_000));
     fireEvent.timeUpdate(video);
-    expect(screen.getByRole('slider', { name: 'Oynatma konumu' })).toHaveAttribute(
+    expect(screen.getByRole('slider', { name: t.player.seekLabel })).toHaveAttribute(
       'aria-valuenow',
       '42',
     );
@@ -1503,14 +1545,11 @@ Sonraki cümle`);
     expect(play).not.toHaveBeenCalled();
     act(() => vi.advanceTimersByTime(29_000));
     fireEvent.timeUpdate(video);
-    expect(screen.getByRole('slider', { name: 'Oynatma konumu' })).toHaveAttribute(
+    expect(screen.getByRole('slider', { name: t.player.seekLabel })).toHaveAttribute(
       'aria-valuenow',
       '42',
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Akışı Tekrar Dene' }));
-    act(() => vi.advanceTimersByTime(1_000));
-    fireEvent.loadedMetadata(video);
-    expect(video.currentTime).toBe(42);
+    expect(video.getAttribute('src')).toContain('transcode=audio&start=42&session=');
     expect(play).not.toHaveBeenCalled();
   });
 
@@ -1539,7 +1578,7 @@ Sonraki cümle`);
     });
 
     expect(loadSpy).toHaveBeenCalledTimes(1);
-    expect(screen.getByText('Bağlantı yeniden kuruluyor (1/2)')).toBeInTheDocument();
+    expect(screen.getByText(t.player.reestablishing(1, 2))).toBeInTheDocument();
 
     unmount();
     vi.useRealTimers();
@@ -1561,18 +1600,18 @@ Sonraki cümle`);
     });
     Object.defineProperty(video, 'currentTime', {
       configurable: true,
-      value: 95,
+      value: 99,
     });
     const dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(Date.now() + 21_000);
 
     fireEvent.timeUpdate(video);
-    expect(screen.getByText('Sonraki Bölüm')).toBeInTheDocument();
+    expect(screen.getByText(t.player.nextEpisode.badge)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Kapat' }));
-    expect(screen.queryByText('Sonraki Bölüm')).not.toBeInTheDocument();
+    expect(screen.queryByText(t.player.nextEpisode.badge)).not.toBeInTheDocument();
 
     fireEvent.timeUpdate(video);
-    expect(screen.queryByText('Sonraki Bölüm')).not.toBeInTheDocument();
+    expect(screen.queryByText(t.player.nextEpisode.badge)).not.toBeInTheDocument();
     dateNowSpy.mockRestore();
   });
 
@@ -1596,7 +1635,7 @@ Sonraki cümle`);
     });
 
     fireEvent.timeUpdate(video);
-    expect(screen.queryByText('Sonraki Bölüm')).not.toBeInTheDocument();
+    expect(screen.queryByText(t.player.nextEpisode.badge)).not.toBeInTheDocument();
   });
 
   it('suppresses the next episode overlay during a compatibility source change', () => {
@@ -1618,10 +1657,10 @@ Sonraki cümle`);
       value: 95,
     });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ses / Safari Uyum Modu' }));
+    fireEvent.click(screen.getByRole('button', { name: t.player.controls.transcodeToggle }));
     fireEvent.timeUpdate(video);
     fireEvent.ended(video);
-    expect(screen.queryByText('Sonraki Bölüm')).not.toBeInTheDocument();
+    expect(screen.queryByText(t.player.nextEpisode.badge)).not.toBeInTheDocument();
   });
 
   it('passes the OpenSubtitles fileId to the download handler', async () => {

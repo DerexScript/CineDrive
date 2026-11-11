@@ -37,6 +37,8 @@ const persistQualityPreference = (quality: QualityPreference) => {
  */
 interface PlaybackSourceState {
   playbackMode: PlaybackMode;
+  /** Plan key whose mode was used to initialize the current source. */
+  appliedPlaybackPlanKey: string;
   /** Absolute position (seconds) the server-side transcode starts from. */
   startOffset: number;
   /** Bumped to force a brand new server-side job for the same offset. */
@@ -82,6 +84,7 @@ const reducer = (state: PlaybackSourceState, action: PlaybackSourceAction): Play
       return {
         ...state,
         playbackMode: action.playbackMode,
+        appliedPlaybackPlanKey: `${action.driveFileId || 'missing'}:${action.playbackMode}`,
         startOffset: 0,
         generation: 0,
         adaptiveQuality: action.adaptiveQuality,
@@ -150,6 +153,7 @@ export const usePlaybackSource = ({
 
   const [state, dispatch] = useReducer(reducer, undefined, () => ({
     playbackMode: recommendedMode,
+    appliedPlaybackPlanKey: `${driveFileId || 'missing'}:${recommendedMode}`,
     startOffset: 0,
     generation: 0,
     qualityPreference: readStoredQualityPreference(),
