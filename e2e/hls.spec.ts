@@ -373,7 +373,15 @@ test.describe('CineDrive HLS', () => {
           video.buffered.end(video.buffered.length - 1) - 0.2,
         );
     });
-    await expect(page.getByText(tr.player.hlsRecoveryFailed)).toBeVisible({ timeout: 50_000 });
+    // Automatic fallback can leave HLS before the terminal error, so the
+    // retryable player error may use either the stream-specific or generic copy.
+    await expect(page.getByRole('heading', { name: tr.player.error.genericTitle })).toBeVisible({
+      timeout: 50_000,
+    });
+    const retryButton = page.getByRole('button', {
+      name: new RegExp(`^(?:${tr.player.error.retryStream}|${tr.player.error.retryPlayback})$`),
+    });
+    await expect(retryButton).toBeVisible();
     const positionBefore = Number(
       await page.getByRole('slider', { name: tr.player.seekLabel }).getAttribute('aria-valuenow'),
     );
@@ -381,7 +389,7 @@ test.describe('CineDrive HLS', () => {
     await page.waitForTimeout(4_500);
     expect(hlsProxy.stats().failures).toBe(failuresAtStop);
     hlsProxy.setOutage(false);
-    await page.getByRole('button', { name: tr.player.error.retryStream, exact: true }).click();
+    await retryButton.click();
     await expectAdvancingVideo(page);
     expect(
       Number(
