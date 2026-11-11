@@ -244,8 +244,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Pin to a stable image; install the browser without apt dependencies.
           - browser: chromium
-            os: ubuntu-latest
+            os: ubuntu-24.04
           # Media codec support is platform-dependent; test WebKit on macOS.
           - browser: webkit
             os: macos-15
@@ -272,7 +273,7 @@ jobs:
         run: pnpm --filter @cinedrive/shared build
 
       - name: Install Playwright browser
-        run: pnpm exec playwright install --with-deps ${{ matrix.browser }}
+        run: pnpm exec playwright install ${{ matrix.browser }}
 
       # The suite seeds its own database, renders its own fixture clip and
       # starts both servers on dedicated ports, so it needs no repository .env.

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 
-const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+const workflow = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8').replace(/\r\n/g, '\n');
 // Structural assertions for this workflow's two-space job layout, not a YAML
 // parser. Execute the actual gate command below so its logic is not duplicated.
 const jobHeaders = [...workflow.matchAll(/^  ([\w-]+):\n/gm)];
@@ -40,6 +40,14 @@ test('verification, browser tests, and Docker smoke do not wait for audit', () =
   }
 });
 
+test('Chromium E2E uses a pinned runner without apt dependency installation', () => {
+  const browsers = jobs.get('e2e-browsers');
+  assert.ok(browsers);
+  assert.match(browsers, /- browser: chromium\n\s+os: ubuntu-24\.04/);
+  assert.match(browsers, /run: pnpm exec playwright install \$\{\{ matrix\.browser \}\}/);
+  assert.doesNotMatch(browsers, /playwright install --with-deps/);
+});
+
 test('server test jobs provide isolated credentials instead of loading example env files', () => {
   for (const name of ['verify', 'node-compatibility']) {
     const job = jobs.get(name);
@@ -71,7 +79,7 @@ test('existing required e2e check includes audit and always evaluates upstream r
   }
 });
 
-test('gate only passes when all three upstream results succeed (125 combinations)', () => {
+test('gate only passes when all three upstream results succeed (125 combinations)', { skip: process.platform === 'win32' }, () => {
   const gate = jobs.get('e2e');
   const command = gate.match(/^        run: \|\n((?:          .*(?:\n|$))+)/m)?.[1];
   assert.ok(command, 'expected a multiline gate command');
